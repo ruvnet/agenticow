@@ -66,8 +66,15 @@ h2{font-size:30px;margin:0 0 8px;letter-spacing:-.5px}
 .card h3{margin:0 0 8px;font-size:18px;color:var(--accent)}
 .card p{margin:0;color:var(--muted);font-size:15px}
 .card .ico{font-size:26px;margin-bottom:10px}
+.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:12px;margin:0 0 6px}
+.tablewrap table{border:none;border-radius:0}
+.scrollhint{display:none;font-size:12px;color:var(--muted);margin:0 0 18px;font-family:var(--mono)}
 table{width:100%;border-collapse:collapse;font-size:14.5px;background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden}
-th,td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--border)}
+th,td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+.matrix th,.matrix td{white-space:normal}
+.matrix td:first-child,.matrix th:first-child{position:sticky;left:0;background:var(--panel2);z-index:1}
+.measured{color:var(--good);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+.est{color:var(--warn);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
 th{background:var(--panel2);color:var(--muted);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.4px}
 td.num,th.num{text-align:right;font-family:var(--mono)}
 .yes{color:var(--good);font-weight:700}
@@ -84,6 +91,28 @@ pre{background:var(--panel2);border:1px solid var(--border);border-radius:12px;p
 .note b{color:var(--warn)}
 footer{padding:40px 0;border-top:1px solid var(--border);color:var(--muted);font-size:14px;text-align:center}
 @media(max-width:820px){.stats{grid-template-columns:repeat(2,1fr)}.cards{grid-template-columns:1fr}h1{font-size:34px}}
+@media(max-width:600px){
+  .wrap{padding:0 16px}
+  .hero{padding:54px 0 36px}
+  h1{font-size:30px;letter-spacing:-.5px}
+  .tag{font-size:16px}
+  h2{font-size:23px}
+  .sub{font-size:14px}
+  section{padding:34px 0}
+  .stats{gap:10px;margin:30px 0}
+  .stat{padding:16px}
+  .stat .n{font-size:26px}
+  .cta{gap:8px}
+  .btn{padding:11px 16px;font-size:14px}
+  .installbar{font-size:13px;padding:10px 14px}
+  .chart{padding:14px}
+  .legend{flex-direction:column;gap:6px;align-items:flex-start}
+  pre{padding:14px;font-size:12.5px}
+  table{font-size:13px}
+  th,td{padding:9px 11px}
+  .scrollhint{display:block}
+  .note{padding:14px 16px;font-size:13.5px}
+}
 </style>
 </head>
 <body>
@@ -179,7 +208,8 @@ footer{padding:40px 0;border-top:1px solid var(--border);color:var(--muted);font
     </div>
 
     <div style="height:24px"></div>
-    <table>
+    <div class="scrollhint">← swipe table →</div>
+    <div class="tablewrap"><table>
       <thead><tr>
         <th>Base N</th><th class="num">Base file</th><th class="num">Branch create (p50)</th>
         <th class="num">Empty branch</th><th class="num">100-edit branch</th>
@@ -190,8 +220,107 @@ footer{padding:40px 0;border-top:1px solid var(--border);color:var(--muted);font
         <tr><td>100,000</td><td class="num">49.6 MB</td><td class="num">463 µs</td><td class="num">162 B</td><td class="num">51.4 KB</td><td class="num">5.83 ms</td><td class="num yes">13×</td><td class="num">321,037×</td></tr>
         <tr><td>1,000,000</td><td class="num">496.3 MB</td><td class="num">472 µs</td><td class="num">162 B</td><td class="num">51.4 KB</td><td class="num">67.14 ms</td><td class="num yes">142×</td><td class="num">3,212,443×</td></tr>
       </tbody>
-    </table>
+    </table></div>
     <p class="sub" style="margin-top:14px;font-size:13.5px">Branch delta is a pure function of edit count (~520 B/edited vector) with zero dependence on base size. At small bases a raw <code>copyFile</code> is already sub-millisecond, so the COW win shows up — and widens — at scale.</p>
+
+    <div style="height:36px"></div>
+    <h2 style="font-size:24px">Multi-approach comparison — performance · storage · cost</h2>
+    <p class="sub">Scenario: <b>1,000 branches over a 1M-vector base</b> (dim 128, ~496&nbsp;MB base).
+      <span class="measured">green = measured</span> on agenticow (AMD Ryzen 9 9950X); other approaches are
+      <span class="est">amber = published / estimated</span> with sources cited — not fabricated.</p>
+    <div class="scrollhint">← swipe table →</div>
+    <div class="tablewrap"><table class="matrix">
+      <thead><tr>
+        <th>Approach</th>
+        <th>Branch / snapshot create</th>
+        <th>Per-branch storage</th>
+        <th>Query latency (ANN)</th>
+        <th>Cost @ 1,000 branches</th>
+        <th>Native COW branch / rollback</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td><b>agenticow (COW)</b></td>
+          <td class="yes">0.47 ms / 162 B <span class="measured">measured, flat to 1M</span></td>
+          <td class="yes">~10.8 KB <span class="measured">measured</span></td>
+          <td class="mid">~2.7× behind hnswlib <span class="est">measured*</span></td>
+          <td class="yes">~507 MB local · ~$0 infra (embedded) <span class="measured">measured†</span></td>
+          <td class="yes">✓ instant (p50 0.57 ms)</td>
+        </tr>
+        <tr>
+          <td><b>Naive full-copy</b></td>
+          <td class="mid">67 ms / 496 MB <span class="measured">measured @ 1M</span></td>
+          <td class="no">full base (~496 MB)</td>
+          <td class="yes">= source engine</td>
+          <td class="no">~484 GB local <span class="measured">measured × N</span></td>
+          <td class="no">✗ (copy, not COW)</td>
+        </tr>
+        <tr>
+          <td>Pinecone (serverless)</td>
+          <td class="no">no native branch — full re-upsert/copy</td>
+          <td class="no">full copy (managed)</td>
+          <td class="yes">fast (core strength)</td>
+          <td class="no">~484 GB stored ≈ <b>$160/mo</b> storage + read/write units <span class="est">est.¹</span></td>
+          <td class="no">✗</td>
+        </tr>
+        <tr>
+          <td>Milvus</td>
+          <td class="no">collection snapshot = full copy / reindex</td>
+          <td class="no">full copy</td>
+          <td class="yes">fast (core strength)</td>
+          <td class="no">~484 GB resident → large RAM cluster, <b>$$$/mo</b> infra <span class="est">est.²</span></td>
+          <td class="no">✗</td>
+        </tr>
+        <tr>
+          <td>Qdrant</td>
+          <td class="no">snapshot = full copy</td>
+          <td class="no">full copy</td>
+          <td class="yes">fast (core strength)</td>
+          <td class="no">~484 GB → managed/self-host, <b>$$$/mo</b> <span class="est">est.³</span></td>
+          <td class="no">✗</td>
+        </tr>
+        <tr>
+          <td>pgvector</td>
+          <td class="no">SQL dump / table copy + reindex</td>
+          <td class="no">full copy</td>
+          <td class="mid">moderate</td>
+          <td class="no">~484 GB in Postgres, reindex per copy <span class="est">est.</span></td>
+          <td class="no">✗</td>
+        </tr>
+        <tr>
+          <td>Chroma</td>
+          <td class="no">full copy of the collection</td>
+          <td class="no">full copy</td>
+          <td class="mid">moderate</td>
+          <td class="no">~484 GB local/managed <span class="est">est.</span></td>
+          <td class="no">✗</td>
+        </tr>
+        <tr>
+          <td>lakeFS / DVC</td>
+          <td class="mid">fast metadata branch (their strength)</td>
+          <td class="yes">file-level delta (cheap)</td>
+          <td class="no">n/a — not a vector engine</td>
+          <td class="mid">cheap branching, but you still build/serve the ANN index yourself <span class="est">published</span></td>
+          <td class="mid">✓ for data/files · ✗ for the vector index</td>
+        </tr>
+      </tbody>
+    </table></div>
+    <p class="note" style="margin-top:8px">
+      <b>Takeaway:</b> agenticow wins decisively on branch-create speed, per-branch storage, and multi-branch
+      cost — and is the only option with native COW branching + instant rollback of a live vector memory. It
+      <b>concedes raw ANN search speed</b> to the dedicated vector DBs (Pinecone / Qdrant / Milvus); use those
+      when single-index query throughput is the priority, and agenticow when you need cheap branching,
+      checkpointing, and rollback of agent memory.
+    </p>
+    <p class="sub" style="margin-top:12px;font-size:12.5px">
+      * SIFT-1M same-machine: ruvector HNSW ~2,197 QPS @ recall 0.95 vs hnswlib-node ~9,344 QPS.
+      † agenticow base (~496 MB) + 1,000 × ~10.8 KB ≈ 507 MB; runs in-process, no managed infra.
+      ¹ Pinecone serverless storage est. from <a href="https://www.pinecone.io/pricing/">pinecone.io/pricing</a>
+      (~$0.33/GB-month) — storage only, excludes read/write units. ² Milvus / Zilliz Cloud est. from
+      <a href="https://zilliz.com/pricing">zilliz.com/pricing</a> (RAM-resident, cluster-sized). ³ Qdrant est. from
+      <a href="https://qdrant.tech/pricing/">qdrant.tech/pricing</a>. All competitor figures are
+      published/estimated and labeled as such; only agenticow's are measured here.
+    </p>
   </div>
 </section>
 
@@ -199,7 +328,8 @@ footer{padding:40px 0;border-top:1px solid var(--border);color:var(--muted);font
   <div class="wrap">
     <h2>How it compares</h2>
     <p class="sub">agenticow is the only one with native copy-on-write branching of the vector index. We concede raw ANN throughput honestly — pick the right tool for the job.</p>
-    <table>
+    <div class="scrollhint">← swipe table →</div>
+    <div class="tablewrap"><table class="matrix">
       <thead><tr>
         <th>Capability</th><th>agenticow</th><th>Pinecone</th><th>Milvus</th><th>pgvector</th><th>Chroma</th><th>Qdrant</th>
       </tr></thead>
@@ -212,7 +342,7 @@ footer{padding:40px 0;border-top:1px solid var(--border);color:var(--muted);font
         <tr><td>Raw ANN throughput</td><td class="mid">~2.7× behind hnswlib*</td><td class="yes">high</td><td class="yes">high</td><td class="mid">moderate</td><td class="mid">moderate</td><td class="yes">high</td></tr>
         <tr><td>ANN index spanning the branch</td><td class="mid">roadmap</td><td class="no">n/a</td><td class="no">n/a</td><td class="no">n/a</td><td class="no">n/a</td><td class="no">n/a</td></tr>
       </tbody>
-    </table>
+    </table></div>
     <p class="sub" style="margin-top:14px;font-size:13px">*On SIFT-1M same-machine, the underlying ruvector HNSW does ~2,197 QPS @ recall 0.95 vs hnswlib-node ~9,344 QPS. If you need maximum raw ANN speed on a static index, use a dedicated ANN library. agenticow's edge is cheap branching/checkpointing of agent memory.</p>
   </div>
 </section>

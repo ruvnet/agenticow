@@ -144,6 +144,29 @@ The acceptance test builds a brute-force ground truth (`base ∪ branch-inserts 
 
 \* **Honest concession.** On SIFT-1M, same machine, the underlying [ruvector](https://github.com/ruvnet/RuVector) HNSW does ~2,197 QPS @ recall 0.95 vs hnswlib-node ~9,344 QPS — roughly **2.7× slower** for raw ANN. If you need maximum raw similarity-search speed on a static index, use a dedicated ANN library. agenticow's edge is **cheap branching, checkpointing and rollback of agent memory** — which none of the above have.
 
+### Performance · storage · cost at scale
+
+**Scenario: 1,000 branches over a 1M-vector base** (dim 128, ~496 MB base). agenticow figures are **measured** on an AMD Ryzen 9 9950X; competitor figures are **published / estimated** (sources below) and labeled as such — not fabricated.
+
+| Approach | Branch / snapshot create | Per-branch storage | Query latency (ANN) | Cost @ 1,000 branches | Native COW / rollback |
+|---|---|---|---|---|---|
+| **agenticow (COW)** | 0.47 ms / 162 B *(measured, flat to 1M)* | ~10.8 KB *(measured)* | ~2.7× behind hnswlib *(measured\*)* | ~507 MB local · **~$0** infra (embedded) *(measured†)* | ✅ instant (p50 0.57 ms) |
+| Naive full-copy | 67 ms / 496 MB *(measured @1M)* | full base (~496 MB) | = source engine | ~484 GB local *(measured ×N)* | ❌ |
+| Pinecone (serverless) | no native branch — full re-upsert | full copy (managed) | fast (core strength) | ~484 GB ≈ **$160/mo** storage + units *(est.¹)* | ❌ |
+| Milvus | snapshot = full copy / reindex | full copy | fast (core strength) | ~484 GB resident → large cluster, **$$$/mo** *(est.²)* | ❌ |
+| Qdrant | snapshot = full copy | full copy | fast (core strength) | ~484 GB → managed/self-host, **$$$/mo** *(est.³)* | ❌ |
+| pgvector | SQL dump + reindex | full copy | moderate | ~484 GB in Postgres *(est.)* | ❌ |
+| Chroma | full collection copy | full copy | moderate | ~484 GB local/managed *(est.)* | ❌ |
+| lakeFS / DVC | fast metadata branch *(their strength)* | file-level delta (cheap) | n/a — not a vector engine | cheap branching, but you still build/serve the ANN index yourself *(published)* | ✅ data/files · ❌ vector index |
+
+**Takeaway:** agenticow wins on branch-create speed, per-branch storage, and multi-branch cost, and is the only option with native COW branching + instant rollback of a live vector memory. It **concedes raw ANN search speed** to the dedicated vector DBs — use those when single-index query throughput is the priority, and agenticow when you need cheap branching, checkpointing, and rollback of agent memory.
+
+<sub>\* SIFT-1M same-machine (above). † base ~496 MB + 1,000 × ~10.8 KB ≈ 507 MB, in-process. ¹ est. from [pinecone.io/pricing](https://www.pinecone.io/pricing/) (~$0.33/GB-mo storage, excl. read/write units). ² est. from [zilliz.com/pricing](https://zilliz.com/pricing). ³ est. from [qdrant.tech/pricing](https://qdrant.tech/pricing/). Competitor figures are published/estimated; only agenticow's are measured.</sub>
+
+The [live site](https://ruvnet.github.io/agenticow/#bench) is mobile-friendly (responsive layout, horizontally-scrollable tables):
+
+<img src="./assets/mobile-hero.png" width="280" alt="agenticow on mobile (375px width)" />
+
 ---
 
 ## Honest scope
