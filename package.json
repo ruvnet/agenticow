@@ -1,6 +1,6 @@
 {
   "name": "agenticow",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Git for Agent Memory: Copy-On-Write vector branching for embedded multi-agent memory. Branch a base memory in ~0.5ms / 162 bytes regardless of base size — 83x faster, 3000x smaller than full-copy snapshots. Exact read-through queries (parent ∪ edits, child wins).",
   "type": "module",
   "main": "src/index.js",
@@ -19,21 +19,19 @@
     "bin",
     "bench/bench.js",
     "bench/acceptance.js",
+    "bench/claim-ladder.js",
     "examples",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
     "bench": "node bench/bench.js",
+    "bench:ladder": "node bench/claim-ladder.js",
     "acceptance": "node bench/acceptance.js",
     "demo": "node bin/agenticow.js demo",
-    "examples": "for f in personalization rollback-quarantine checkpointing git-workflow ab-branches parallel-agents; do echo \"\\n── $f ──\"; node examples/$f.mjs; done",
-    "example:personalization": "node examples/personalization.mjs",
-    "example:rollback": "node examples/rollback-quarantine.mjs",
-    "example:checkpointing": "node examples/checkpointing.mjs",
-    "example:git-workflow": "node examples/git-workflow.mjs",
-    "example:ab-branches": "node examples/ab-branches.mjs",
-    "example:parallel-agents": "node examples/parallel-agents.mjs",
+    "examples": "for f in personalization rollback-quarantine checkpointing git-workflow ab-branches parallel-agents promotion-pipeline compliance-lineage ab-at-scale parallel-selves memory-evolution simulated-org; do echo \"\\n══ $f ══\"; node examples/$f.mjs; done",
+    "examples:platform": "for f in promotion-pipeline compliance-lineage ab-at-scale; do echo \"\\n══ $f ══\"; node examples/$f.mjs; done",
+    "examples:exotic": "for f in parallel-selves memory-evolution simulated-org; do echo \"\\n══ $f ══\"; node examples/$f.mjs; done",
     "test": "node --test test/*.test.js"
   },
   "keywords": [

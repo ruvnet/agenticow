@@ -395,6 +395,20 @@ agent.<span class="fn">rollback</span>(ckpt.id);  <span class="cm">// poison gon
       <div class="card"><h3>ab-branches</h3><p>N variant branches, score each, promote the winner (A/B / Darwin-style).</p></div>
       <div class="card"><h3>parallel-agents</h3><p>Fan out N agent branches off one base, query each, roll one back.</p></div>
     </div>
+
+    <div style="height:36px"></div>
+    <h2 style="font-size:24px">Claim ladder — runnable, executed, benchmarked</h2>
+    <p class="sub">Every tier is backed by code you can run. <span class="measured">PROVEN</span> = bench + acceptance · <span class="measured">DEMONSTRATED</span> = executed + benchmarked · <span class="est">PoC</span> = mechanics shown, cognition out of scope.</p>
+    <div class="scrollhint">← swipe table →</div>
+    <div class="tablewrap"><table class="matrix">
+      <thead><tr><th>Tier</th><th>What it shows</th><th>Status</th><th>Examples / bench</th></tr></thead>
+      <tbody>
+        <tr><td><b>Practical</b></td><td>branch / checkpoint / rollback + exact read-through</td><td class="yes">✅ PROVEN</td><td>1,000-branch acceptance, recall@10 = 100%</td></tr>
+        <tr><td><b>Platform</b></td><td>promotion pipeline · compliance &amp; right-to-erasure · A/B at scale</td><td class="yes">✅ DEMONSTRATED + benchmarked</td><td>fork 464 µs · score 133 µs · promote 897 µs · contradiction-check ~1M pairs/s · 0.84 KB/branch</td></tr>
+        <tr><td><b>Exotic</b></td><td>parallel selves · Darwin-on-memory · simulated org (contradiction scan)</td><td class="mid">⚗️ PoC (mechanics only)</td><td>cognition out of scope — judge/fitness is a scoring function, not an LLM</td></tr>
+      </tbody>
+    </table></div>
+    <p class="sub" style="margin-top:12px;font-size:13px">Run: <code>npm run examples</code> · <code>npm run examples:platform</code> · <code>npm run examples:exotic</code> · <code>npm run bench:ladder</code>. Numbers measured on AMD Ryzen 9 9950X, base=5,000, dim=64.</p>
   </div>
 </section>
 

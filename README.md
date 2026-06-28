@@ -96,8 +96,9 @@ A worked script lives in [`examples/parallel-agents.mjs`](./examples/parallel-ag
 ## Applications
 
 Concrete ways to use COW agent memory — each with a runnable script in
-[`examples/`](./examples). Framing is honest: **practical** ships and is proven,
-**strategic** is shipped-but-early, **exotic** is vision/roadmap (clearly marked).
+[`examples/`](./examples). Framing is honest: **practical** = PROVEN (bench +
+acceptance), **platform** = DEMONSTRATED + benchmarked, **exotic** = PoC mechanics
+(cognition out of scope). See the [claim ladder](#claim-ladder).
 
 ### 🟢 Personalization — one base, a branch per user *(practical)*
 Give every user/account/tenant their own memory branch off a shared base. Private
@@ -142,24 +143,40 @@ feature.promote(prod);                       // merge into production
 ```
 → [`examples/git-workflow.mjs`](./examples/git-workflow.mjs)
 
-### 🟡 A/B testing & evolution — score variants, promote the winner *(strategic)*
+### 🟢 Promotion pipeline — agent → sandbox → review → prod *(platform — DEMONSTRATED)*
+A "memory DevOps" pipeline: an agent proposes memories in a sandbox branch, a
+review gate scores them, and only a passing branch is promoted. A rejected branch
+is discarded and never reaches base — with a lineage audit (parent/label/timestamp)
+at each step.
+→ [`examples/promotion-pipeline.mjs`](./examples/promotion-pipeline.mjs)
+
+### 🟢 A/B testing at scale — score variants, promote the winner *(platform — DEMONSTRATED)*
 Fork N variant branches off one base, score each, and promote only the winner.
-The substrate for Darwin-style / population-based agent-memory search.
+Benchmarked at 128 variants (fork 1.3 ms/variant, score 0.15 ms/variant, 0.84 KB/variant).
 ```js
 const variants = ids.map((i) => base.fork(`variant-${i}`));
 // ...score each...
 variants[best].promote(base);               // keep the winner, drop the rest free
 ```
-→ [`examples/ab-branches.mjs`](./examples/ab-branches.mjs)
+→ [`examples/ab-branches.mjs`](./examples/ab-branches.mjs) · [`ab-at-scale.mjs`](./examples/ab-at-scale.mjs)
 
-### 🟡 Compliance & lineage — provenance-tracked memory *(strategic)*
-Every branch records its parent id + hash and a cryptographic witness chain.
-`lineage()` gives an auditable history of how a memory state was reached —
-useful for reproducibility and audit trails.
+### 🟢 Compliance, lineage & right-to-erasure *(platform — DEMONSTRATED)*
+`lineage()` gives an auditable parent/label/timestamp trail for every mutation
+("why does the agent know X?"). Per-user data lives in its own branch layer, so
+dropping that layer surgically erases exactly that user's data (GDPR-style).
+→ [`examples/compliance-lineage.mjs`](./examples/compliance-lineage.mjs)
 
 ### 🟡 Edge / local-first agents — embedded, no server *(strategic)*
 agenticow runs in-process over a single `.rvf` file — no DB server, no network.
 Thousands of cheap branches fit on-device for offline/edge multi-agent memory.
+
+### ⚗️ Cognitive ensembles, evolution & simulated orgs *(exotic — PoC mechanics)*
+PoCs that demonstrate the branching **mechanics** of advanced patterns — NOT that
+the branches are intelligent (the judge/fitness is a scoring function, cognition
+is out of scope):
+- **Parallel selves** — an ensemble of personas off one base, a judge picks + promotes the winner → [`examples/parallel-selves.mjs`](./examples/parallel-selves.mjs)
+- **Darwin-on-memory** — a population evolves over generations; storage stays delta-sized → [`examples/memory-evolution.mjs`](./examples/memory-evolution.mjs)
+- **Simulated org** — departmental branches with cross-branch contradiction detection before rollout → [`examples/simulated-org.mjs`](./examples/simulated-org.mjs)
 
 ### 🔭 Agent marketplaces & shared base memories *(exotic — vision, not shipped)*
 A published base memory that many agents branch from, contributing deltas back —
@@ -324,14 +341,15 @@ Still honest about the rest:
 
 ## Claim ladder
 
-Where agenticow is today, and where it's going — labeled honestly.
+Where agenticow is today, and where it's going — labeled honestly, each tier backed by **runnable, executed** code.
 
 | Tier | Claim | Status |
 |---|---|---|
-| **Practical** | Cheap, base-independent branch / checkpoint / rollback of vector memory (162 B / ~0.5 ms); exact read-through with tombstone masking. | ✅ **Proven** (bench + acceptance) |
-| **Strong** | A Git-style workflow for vector state — `branch → diff → promote`, isolated experiments, instant revert of bad memory. | ✅ Shipped (CLI + API), proven at small scale |
-| **Strategic** | A memory OS layer for multi-agent infrastructure — thousands of agents branching one shared base, per-user/per-task memory without the copy explosion. | 🔭 Vision (the primitives are here; scale-out is the work) |
-| **Exotic** | A substrate for *evolving / competing cognitive branches* — parallel "selves", simulated orgs, time-travel debugging of agent memory. | 🌌 Roadmap / research — compelling, **not shipped** |
+| **Practical** | Cheap, base-independent branch / checkpoint / rollback of vector memory (162 B / ~0.5 ms); exact read-through with tombstone masking. | ✅ **PROVEN** — `npm run bench` + `npm run acceptance` (1,000 branches, recall@10 = 100%) |
+| **Platform** | A "memory DevOps" layer — promotion pipelines, compliance/lineage & right-to-erasure, A/B at scale for multi-agent infrastructure. | ✅ **DEMONSTRATED + benchmarked** — `examples/{promotion-pipeline,compliance-lineage,ab-at-scale}.mjs`; ops bench `npm run bench:ladder`: fork **464 µs**, score **133 µs**, promote **897 µs**, contradiction-check **~1M pairs/s**, **0.84 KB/branch** |
+| **Exotic** | A substrate for evolving / competing cognitive branches — parallel "selves", Darwin-on-memory, simulated orgs with contradiction detection. | ⚗️ **PoC-feasible** — `examples/{parallel-selves,memory-evolution,simulated-org}.mjs` demonstrate the branching **mechanics** (shared base, isolated deltas, judge + promote, contradiction scan). The cognitive **quality** of a branch is **out of scope** — the judge/fitness is a scoring function, not validated AI cognition. |
+
+Run the tier examples: `npm run examples` (all) · `npm run examples:platform` · `npm run examples:exotic`.
 
 ---
 

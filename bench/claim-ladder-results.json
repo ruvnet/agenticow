@@ -1,0 +1,15 @@
+{
+  "machine": "AMD Ryzen 9 9950X 16-Core Processor",
+  "node": "v22.22.2",
+  "base": 5000,
+  "dim": 64,
+  "n": 200,
+  "date": "2026-06-28T19:59:05.867Z",
+  "forkExactMs": 0.46380999999999517,
+  "forkNativeMs": 0.543830000000014,
+  "nativeAnnActive": true,
+  "scoreMs": 0.13274000000001251,
+  "promoteMs": 0.8972690000000512,
+  "contradictionPairsPerSec": 997250,
+  "perBranchBytes": 864
+}

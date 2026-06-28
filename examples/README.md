@@ -109,3 +109,82 @@ agent-0 before rollback: hallucination present = true
 agent-0 after rollback:  hallucination present = false (base intact)
 done.
 ```
+
+---
+
+## Claim-ladder tier examples
+
+These map to the README **claim ladder**. **Practical** is proven by the examples
+above + the acceptance test. **Platform** is *demonstrated + benchmarked* below.
+**Exotic** examples are **PoCs**: they demonstrate the branching *mechanics* of
+each pattern — the cognitive *quality* of a branch is out of scope (the "judge"
+/ "fitness" is a scoring function, not an LLM). Run all: `npm run examples`;
+ops benchmark: `npm run bench:ladder`.
+
+### Operation benchmark (`bench/claim-ladder.js`)
+AMD Ryzen 9 9950X, base=5,000, dim=64:
+
+```
+operation                                 p50           throughput
+fork (exact, derive)                        464 µs     2156/s
+fork (native ANN)                           544 µs     1839/s
+score (read-through query k=10)             133 µs     7534/s
+promote (replay delta)                      897 µs     1114/s
+contradiction-check (1225 pairs)          1.228 ms     997,250 pairs/s
+per-branch storage : 0.84 KB   ·   native ANN active : true (linux-x64)
+```
+
+### Platform tier — DEMONSTRATED
+
+**`promotion-pipeline.mjs`** — agent → sandbox → review-gate → promote, with a lineage audit per step; a rejected branch never reaches base.
+```
+── agent "alice" ──
+  audit[spawn] node=agent/alice id=aa5c61dc… parent=f4e2c264… mutations=0 created=…
+  audit[sandbox-ingest] node=sandbox/alice id=1dc18f35… parent=aa5c61dc… mutations=2 created=…
+  review gate: PASS  → promoted: 2 vectors merged into base (was 500, now 502)
+── agent "mallory" ──
+  review gate: REJECT (near a flagged/banned memory)  → discarded sandbox; base unchanged (502)
+flagged memory present in base = false
+```
+
+**`compliance-lineage.mjs`** — provenance trail + right-to-erasure by dropping a branch layer.
+```
+— provenance —  alice: fact id 50000 sourced from "author:alice" (created …, mutations=1)
+— right-to-erasure (remove user "carol") —
+  before: carol's branch knows her fact = true
+  after:  carol's fact in base = false (base never held it)
+  alice still intact = true, bob still intact = true
+```
+
+**`ab-at-scale.mjs`** — 128 variant branches, score vs target, promote winner; benchmarked.
+```
+winner: v127 (dist 0.0000); promoted 1 vector into base
+  fork    : 1.30 ms/variant (770 forks/s)
+  index   : 1752.8 ms one-time lazy base-HNSW build (shared by all branches)
+  score   : 0.149 ms/variant (6731 scores/s, steady-state)
+  promote : 2.09 ms   ·   storage : 0.84 KB/variant (128 variants = 108 KB)
+```
+
+### Exotic tier — PoC (mechanics demonstrated; cognition out of scope)
+
+**`parallel-selves.mjs`** — 4 personas (conservative/creative/adversarial/security) off one base; a judge scores + promotes the winner.
+```
+creative score=0.9981 · security 0.8218 · adversarial 0.4827 · conservative -0.6189
+judge picks: "creative"  → promoted 1 vector into base
+NOTE: mechanics only — the "selves" are scored by a function, not validated as intelligent.
+```
+
+**`memory-evolution.mjs`** — population of branches, winners reproduce over generations; storage stays delta-sized.
+```
+gen 1 best -0.0510 → gen 6 best -0.0103 (best reached -0.0062)
+72 branches, 0.72 KB/branch (delta-sized); base 67 KB — storage flat across generations.
+NOTE: mechanics only — "fitness" is a scoring function, not validated cognition.
+```
+
+**`simulated-org.mjs`** — Finance/Legal/Eng/Sales branches; detect cross-branch contradictions before rollout.
+```
+scanned 4 topics × 6 dept-pairs → 23 contradictions (cosine > 0.3)
+Finance↔Sales agree on revenue-recognition (not flagged) = true
+→ gate the rollout: 23 contradictions must be resolved before promote-all.
+NOTE: mechanics only — facts are vectors; the rule is a distance threshold, not reasoning.
+```

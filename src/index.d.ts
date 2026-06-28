@@ -67,6 +67,12 @@ export interface LineageNode {
   id: string;
   label: string | null;
   path: string;
+  /** fileId of the parent node (null for the base). */
+  parent: string | null;
+  /** epoch ms when this node was created. */
+  createdAt: number;
+  /** number of ids ingested at this node (requires track). */
+  mutations: number;
   tombstones: number;
 }
 

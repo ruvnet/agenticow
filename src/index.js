@@ -65,6 +65,9 @@ class Node {
     this.label = label || null;
     this.id = db.fileId();
     this.tombstones = new Set();
+    // Audit: when this node was created (epoch ms). Surfaced via lineage() so
+    // callers can build a provenance/compliance trail.
+    this.createdAt = Date.now();
     // Edit log for diff()/promote(). Cheap on small branches; disabled on huge
     // bases via { track:false } in open().
     this.editIds = new Set();
@@ -484,11 +487,15 @@ export class AgenticMemory {
 
   /** Lineage chain metadata, working node first. */
   lineage() {
-    return this._chain().map((n, i) => ({
-      role: i === 0 ? 'working' : (i === this._chain().length - 1 ? 'base' : 'checkpoint'),
+    const chain = this._chain();
+    return chain.map((n, i) => ({
+      role: i === 0 ? 'working' : (i === chain.length - 1 ? 'base' : 'checkpoint'),
       id: n.id,
       label: n.label,
       path: n.path,
+      parent: i < chain.length - 1 ? chain[i + 1].id : null,
+      createdAt: n.createdAt,
+      mutations: n.editIds.size,
       tombstones: n.tombstones.size,
     }));
   }
