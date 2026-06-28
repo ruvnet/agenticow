@@ -9,6 +9,14 @@ export interface OpenOptions {
   m?: number;
   /** HNSW efConstruction (optional, create only). */
   efConstruction?: number;
+  /** Keep an in-memory edit log enabling diff()/promote(). Default: true. */
+  track?: boolean;
+}
+
+export interface MemoryDiff {
+  added: number[];
+  overridden: number[];
+  deleted: number[];
 }
 
 export interface IngestResult {
@@ -70,10 +78,15 @@ export class AgenticMemory {
   delete(ids: number[]): { deleted: number; tombstoned: number };
   query(vector: number[] | Float32Array, k?: number, opts?: QueryOptions): QueryHit[];
   branch(label?: string, filePath?: string): AgenticMemory;
+  fork(label?: string, filePath?: string): AgenticMemory;
+  diff(): MemoryDiff;
+  promote(target: AgenticMemory): { ingested: number; deleted: number };
   checkpoint(label?: string): CheckpointDescriptor;
   rollback(checkpointId?: string): { restoredTo: string; depth: number };
   lineage(): LineageNode[];
   status(): MemoryStatus;
+  save(manifestPath: string): string;
+  static load(manifestPath: string): AgenticMemory;
   close(): void;
 }
 

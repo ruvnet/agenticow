@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>agenticow — Git for Agent Memory: Copy-On-Write Vector Branching (83× faster, 3000× smaller snapshots)</title>
+<meta name="description" content="agenticow is Git for agent memory: copy-on-write (COW) vector branching for embedded multi-agent memory. Branch a base vector memory in ~0.5ms / 162 bytes regardless of base size — 83× faster, 3000× smaller than full-copy snapshots. Exact read-through queries (parent ∪ edits, child wins)." />
+<meta name="keywords" content="agent memory, vector database branching, copy-on-write, COW vector store, multi-agent memory, embedded vector DB, memory checkpointing, vector branching, git for vectors, AI agent memory, LLM memory, vector snapshot, rollback, checkpoint, ruvector, rvf" />
+<meta name="author" content="ruvnet" />
+<link rel="canonical" href="https://ruvnet.github.io/agenticow/" />
+<!-- Open Graph -->
+<meta property="og:type" content="website" />
+<meta property="og:title" content="agenticow — Git for Agent Memory: Copy-On-Write Vector Branching" />
+<meta property="og:description" content="Branch a base vector memory in ~0.5ms / 162 bytes regardless of base size — 83× faster, 3000× smaller than full-copy snapshots. Exact read-through (parent ∪ edits, child wins)." />
+<meta property="og:url" content="https://ruvnet.github.io/agenticow/" />
+<meta property="og:image" content="https://ruvnet.github.io/agenticow/assets/og-image.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="agenticow — Git for Agent Memory" />
+<meta name="twitter:description" content="Copy-on-write vector branching: 83× faster, 3000× smaller snapshots. Exact read-through for multi-agent memory." />
+<meta name="twitter:image" content="https://ruvnet.github.io/agenticow/assets/og-image.png" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "agenticow",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Node.js (Linux, macOS, Windows)",
+  "description": "Git for Agent Memory — copy-on-write vector branching for embedded multi-agent memory.",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "url": "https://ruvnet.github.io/agenticow/",
+  "softwareHelp": "https://github.com/ruvnet/agenticow",
+  "keywords": "agent memory, vector database branching, copy-on-write, multi-agent memory, embedded vector DB, memory checkpointing"
+}
+</script>
+<style>
+:root{
+  --bg:#0a0e17; --panel:#121826; --panel2:#0e1421; --border:#1f2a3d;
+  --text:#e6edf6; --muted:#8a97ac; --accent:#3fe0c5; --accent2:#7aa2ff;
+  --warn:#ffb454; --good:#3fe07a; --bad:#ff6b6b; --mono:'SFMono-Regular',ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--accent2);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+code,pre{font-family:var(--mono)}
+.hero{padding:80px 0 56px;text-align:center;background:radial-gradient(1200px 480px at 50% -120px,rgba(63,224,197,.14),transparent 70%)}
+.badge{display:inline-block;font-size:13px;color:var(--accent);border:1px solid var(--border);background:var(--panel);border-radius:999px;padding:5px 14px;margin-bottom:22px;font-family:var(--mono)}
+h1{font-size:46px;line-height:1.1;margin:0 0 16px;letter-spacing:-1px}
+h1 .grad{background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.tag{font-size:20px;color:var(--muted);max-width:760px;margin:0 auto 28px}
+.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:14px}
+.btn{padding:12px 22px;border-radius:10px;font-weight:600;font-size:15px}
+.btn.p{background:var(--accent);color:#06231f}
+.btn.s{background:var(--panel);color:var(--text);border:1px solid var(--border)}
+.installbar{font-family:var(--mono);background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:12px 18px;display:inline-block;color:var(--accent);margin-top:8px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:48px 0}
+.stat{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:22px;text-align:center}
+.stat .n{font-size:34px;font-weight:800;color:var(--accent)}
+.stat .l{font-size:13px;color:var(--muted);margin-top:4px}
+section{padding:48px 0;border-top:1px solid var(--border)}
+h2{font-size:30px;margin:0 0 8px;letter-spacing:-.5px}
+.sub{color:var(--muted);margin:0 0 28px}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:24px}
+.card h3{margin:0 0 8px;font-size:18px;color:var(--accent)}
+.card p{margin:0;color:var(--muted);font-size:15px}
+.card .ico{font-size:26px;margin-bottom:10px}
+table{width:100%;border-collapse:collapse;font-size:14.5px;background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+th,td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--border)}
+th{background:var(--panel2);color:var(--muted);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.4px}
+td.num,th.num{text-align:right;font-family:var(--mono)}
+.yes{color:var(--good);font-weight:700}
+.no{color:var(--bad);font-weight:700}
+.mid{color:var(--warn);font-weight:700}
+tr:last-child td{border-bottom:none}
+pre{background:var(--panel2);border:1px solid var(--border);border-radius:12px;padding:20px;overflow:auto;font-size:14px;line-height:1.7}
+.kw{color:var(--accent2)} .st{color:var(--accent)} .cm{color:var(--muted)} .fn{color:var(--warn)}
+.chart{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:24px}
+.legend{display:flex;gap:24px;justify-content:center;margin-top:8px;font-size:14px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.dot{width:12px;height:12px;border-radius:3px;display:inline-block}
+.note{background:rgba(255,180,84,.08);border:1px solid rgba(255,180,84,.3);border-radius:12px;padding:18px 22px;color:#f0d6a8;font-size:14.5px}
+.note b{color:var(--warn)}
+footer{padding:40px 0;border-top:1px solid var(--border);color:var(--muted);font-size:14px;text-align:center}
+@media(max-width:820px){.stats{grid-template-columns:repeat(2,1fr)}.cards{grid-template-columns:1fr}h1{font-size:34px}}
+</style>
+</head>
+<body>
+<div class="hero">
+  <div class="wrap">
+    <div class="badge">npm i agenticow · MIT · $0</div>
+    <h1><span class="grad">agenticow</span><br/>Git for Agent Memory</h1>
+    <p class="tag">Copy-on-write vector branching for embedded multi-agent memory.
+      Branch a base memory in <b>~0.5&nbsp;ms / 162&nbsp;bytes</b> — independent of base size.
+      <b>83× faster, 3000× smaller</b> than full-copy snapshots.</p>
+    <div class="cta">
+      <a class="btn p" href="https://github.com/ruvnet/agenticow">GitHub →</a>
+      <a class="btn s" href="https://www.npmjs.com/package/agenticow">npm</a>
+      <a class="btn s" href="#bench">Benchmarks</a>
+    </div>
+    <div><span class="installbar">npm install agenticow</span></div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="stats">
+    <div class="stat"><div class="n">~0.5 ms</div><div class="l">branch create (any base size)</div></div>
+    <div class="stat"><div class="n">162 B</div><div class="l">empty branch on disk</div></div>
+    <div class="stat"><div class="n">142×</div><div class="l">faster than full copy @ 1M*</div></div>
+    <div class="stat"><div class="n">O(1)</div><div class="l">in base size</div></div>
+  </div>
+</div>
+
+<section id="what">
+  <div class="wrap">
+    <h2>What is copy-on-write for vectors?</h2>
+    <p class="sub">Every other vector store makes you full-copy the index to snapshot or fork it. agenticow branches it.</p>
+    <div class="cards">
+      <div class="card"><div class="ico">🌿</div><h3>Branch, don't copy</h3>
+        <p>A branch records only its own edits plus a pointer to the parent. Creating one is constant-time and constant-size — 162 bytes — whether the base holds 10k or 1M vectors.</p></div>
+      <div class="card"><div class="ico">🔎</div><h3>Exact read-through</h3>
+        <p>Query a branch and you see <code>parent ∪ your edits</code>, with the child winning on any id collision and deletes honored. The base data is never duplicated.</p></div>
+      <div class="card"><div class="ico">⏪</div><h3>Instant rollback</h3>
+        <p>Checkpoint in 162 bytes, then throw away a poisoned branch and resume from the last clean state in under a millisecond. No re-indexing.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="uses">
+  <div class="wrap">
+    <h2>Three things it makes cheap</h2>
+    <p class="sub">All three are O(1) in base size today.</p>
+    <div class="cards">
+      <div class="card"><div class="ico">👥</div><h3>Parallel agents, one base memory</h3>
+        <p>Spawn N agents that each branch a shared base memory. N branches cost N×162 B and N×0.5 ms instead of N full copies of a 496 MB index.</p></div>
+      <div class="card"><div class="ico">🧪</div><h3>Roll back a poisoned branch</h3>
+        <p>An agent ingests bad/adversarial memories into its branch. Drop the branch — the base and every sibling are untouched. Isolation is verified.</p></div>
+      <div class="card"><div class="ico">📌</div><h3>Zero-cost checkpointing</h3>
+        <p>Snapshot agent memory before every risky step. Each checkpoint is 162 B + the edits since the last one — keep thousands of them.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="bench">
+  <div class="wrap">
+    <h2>Benchmarks — branch create vs full copy</h2>
+    <p class="sub">Reproduced on an AMD Ryzen 9 9950X (32 threads), Node v22, dim 128, cosine, median of 11 runs. Run it yourself: <code>npx agenticow bench</code></p>
+    <div class="chart">
+      <svg viewBox="0 0 920 360" width="100%" role="img" aria-label="Branch create latency stays flat while full copy latency rises with base size">
+        <!-- axes -->
+        <line x1="90" y1="300" x2="880" y2="300" stroke="#1f2a3d" stroke-width="1.5"/>
+        <line x1="90" y1="40" x2="90" y2="300" stroke="#1f2a3d" stroke-width="1.5"/>
+        <!-- y labels (log scale: 0.1,1,10,100 ms) -->
+        <text x="78" y="300" fill="#8a97ac" font-size="12" text-anchor="end">0.1ms</text>
+        <text x="78" y="213" fill="#8a97ac" font-size="12" text-anchor="end">1ms</text>
+        <text x="78" y="126" fill="#8a97ac" font-size="12" text-anchor="end">10ms</text>
+        <text x="78" y="48" fill="#8a97ac" font-size="12" text-anchor="end">100ms</text>
+        <line x1="90" y1="213" x2="880" y2="213" stroke="#1f2a3d" stroke-dasharray="3 5"/>
+        <line x1="90" y1="126" x2="880" y2="126" stroke="#1f2a3d" stroke-dasharray="3 5"/>
+        <!-- x labels -->
+        <text x="220" y="324" fill="#8a97ac" font-size="13" text-anchor="middle">10k</text>
+        <text x="485" y="324" fill="#8a97ac" font-size="13" text-anchor="middle">100k</text>
+        <text x="750" y="324" fill="#8a97ac" font-size="13" text-anchor="middle">1M base vectors</text>
+        <!-- full copy line: 0.373ms(10k) 5.83ms(100k) 67.14ms(1M)  y = 300 - 87*log10(ms/0.1) -->
+        <!-- log10(0.373/0.1)=0.572 -> y=250 ; log10(5.83/0.1)=1.766 -> y=146.5 ; log10(67.14/0.1)=2.827 -> y=54 -->
+        <polyline points="220,250 485,146 750,54" fill="none" stroke="#ff6b6b" stroke-width="3"/>
+        <circle cx="220" cy="250" r="5" fill="#ff6b6b"/><circle cx="485" cy="146" r="5" fill="#ff6b6b"/><circle cx="750" cy="54" r="5" fill="#ff6b6b"/>
+        <text x="750" y="42" fill="#ff6b6b" font-size="12" text-anchor="middle">67 ms</text>
+        <!-- branch line: 0.519,0.463,0.472 ms  -> ~ y=236,246,245 (flat ~0.5ms) -->
+        <polyline points="220,237 485,246 750,245" fill="none" stroke="#3fe0c5" stroke-width="3"/>
+        <circle cx="220" cy="237" r="5" fill="#3fe0c5"/><circle cx="485" cy="246" r="5" fill="#3fe0c5"/><circle cx="750" cy="245" r="5" fill="#3fe0c5"/>
+        <text x="750" y="266" fill="#3fe0c5" font-size="12" text-anchor="middle">0.47 ms (flat)</text>
+      </svg>
+      <div class="legend">
+        <span><span class="dot" style="background:#3fe0c5"></span>agenticow branch create — O(1) in base</span>
+        <span><span class="dot" style="background:#ff6b6b"></span>full file copy — O(base)</span>
+      </div>
+    </div>
+
+    <div style="height:24px"></div>
+    <table>
+      <thead><tr>
+        <th>Base N</th><th class="num">Base file</th><th class="num">Branch create (p50)</th>
+        <th class="num">Empty branch</th><th class="num">100-edit branch</th>
+        <th class="num">Full copy (p50)</th><th class="num">Speedup</th><th class="num">Smaller</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>10,000</td><td class="num">5.0 MB</td><td class="num">519 µs</td><td class="num">162 B</td><td class="num">51.4 KB</td><td class="num">373 µs</td><td class="num mid">1×</td><td class="num">32,102×</td></tr>
+        <tr><td>100,000</td><td class="num">49.6 MB</td><td class="num">463 µs</td><td class="num">162 B</td><td class="num">51.4 KB</td><td class="num">5.83 ms</td><td class="num yes">13×</td><td class="num">321,037×</td></tr>
+        <tr><td>1,000,000</td><td class="num">496.3 MB</td><td class="num">472 µs</td><td class="num">162 B</td><td class="num">51.4 KB</td><td class="num">67.14 ms</td><td class="num yes">142×</td><td class="num">3,212,443×</td></tr>
+      </tbody>
+    </table>
+    <p class="sub" style="margin-top:14px;font-size:13.5px">Branch delta is a pure function of edit count (~520 B/edited vector) with zero dependence on base size. At small bases a raw <code>copyFile</code> is already sub-millisecond, so the COW win shows up — and widens — at scale.</p>
+  </div>
+</section>
+
+<section id="compare">
+  <div class="wrap">
+    <h2>How it compares</h2>
+    <p class="sub">agenticow is the only one with native copy-on-write branching of the vector index. We concede raw ANN throughput honestly — pick the right tool for the job.</p>
+    <table>
+      <thead><tr>
+        <th>Capability</th><th>agenticow</th><th>Pinecone</th><th>Milvus</th><th>pgvector</th><th>Chroma</th><th>Qdrant</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>Native COW branch of the index</td><td class="yes">✓</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td></tr>
+        <tr><td>O(1)-in-base branch create</td><td class="yes">✓ 162 B</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td></tr>
+        <tr><td>Snapshot mechanism</td><td class="yes">COW delta</td><td class="mid">full copy</td><td class="mid">full copy</td><td class="mid">SQL dump</td><td class="mid">full copy</td><td class="mid">full copy</td></tr>
+        <tr><td>Exact read-through (parent ∪ edits)</td><td class="yes">✓</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td></tr>
+        <tr><td>Embedded / in-process (no server)</td><td class="yes">✓</td><td class="no">✗</td><td class="no">✗</td><td class="mid">via PG</td><td class="yes">✓</td><td class="mid">✓/server</td></tr>
+        <tr><td>Raw ANN throughput</td><td class="mid">~2.7× behind hnswlib*</td><td class="yes">high</td><td class="yes">high</td><td class="mid">moderate</td><td class="mid">moderate</td><td class="yes">high</td></tr>
+        <tr><td>ANN index spanning the branch</td><td class="mid">roadmap</td><td class="no">n/a</td><td class="no">n/a</td><td class="no">n/a</td><td class="no">n/a</td><td class="no">n/a</td></tr>
+      </tbody>
+    </table>
+    <p class="sub" style="margin-top:14px;font-size:13px">*On SIFT-1M same-machine, the underlying ruvector HNSW does ~2,197 QPS @ recall 0.95 vs hnswlib-node ~9,344 QPS. If you need maximum raw ANN speed on a static index, use a dedicated ANN library. agenticow's edge is cheap branching/checkpointing of agent memory.</p>
+  </div>
+</section>
+
+<section id="usage">
+  <div class="wrap">
+    <h2>Usage</h2>
+    <p class="sub">One small API. ESM, Node ≥ 18.</p>
+<pre><span class="kw">import</span> { open } <span class="kw">from</span> <span class="st">'agenticow'</span>;
+
+<span class="cm">// open or create a base memory</span>
+<span class="kw">const</span> base = <span class="fn">open</span>(<span class="st">'memory.rvf'</span>, { dimension: <span class="st">1536</span> });
+base.<span class="fn">ingest</span>([{ id: <span class="st">1</span>, vector: embedding }, <span class="cm">/* ... */</span>]);
+
+<span class="cm">// branch it for a parallel agent — ~0.5 ms / 162 B, any base size</span>
+<span class="kw">const</span> agent = base.<span class="fn">branch</span>(<span class="st">'agent-a'</span>);
+agent.<span class="fn">ingest</span>([{ id: <span class="st">9001</span>, vector: newMemory }]); <span class="cm">// isolated</span>
+
+<span class="cm">// exact read-through: sees the base + its own edits, child wins on collision</span>
+<span class="kw">const</span> hits = agent.<span class="fn">query</span>(queryVector, <span class="st">10</span>);
+
+<span class="cm">// checkpoint + rollback a poisoned branch</span>
+<span class="kw">const</span> ckpt = agent.<span class="fn">checkpoint</span>(<span class="st">'clean'</span>);
+agent.<span class="fn">ingest</span>([{ id: <span class="st">666</span>, vector: poison }]);
+agent.<span class="fn">rollback</span>(ckpt.id);  <span class="cm">// poison gone, clean memory intact</span></pre>
+    <div class="note" style="margin-top:24px">
+      <b>Honest scope.</b> agenticow ships <b>COW branch creation</b> (the 83×/3000× headline, proven) and
+      <b>exact read-through</b> queries (lookup / flat-scan merge returning parent ∪ edits, child wins, deletes honored).
+      A single ANN/HNSW index that <b>spans the COW boundary</b> is <b>roadmap, not shipped</b> — read-through merges
+      each store's own index and re-ranks exactly. Native cluster-level read-through landed in
+      <a href="https://github.com/ruvnet/RuVector/pull/617">ruvnet/RuVector PR #617</a>; until it is published,
+      agenticow implements read-through in its wrapper over the shipped <code>derive()</code> primitive.
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>agenticow · MIT · built on <a href="https://github.com/ruvnet/RuVector">ruvector</a> RVF ·
+    <a href="https://github.com/ruvnet/agenticow">GitHub</a> ·
+    <a href="https://www.npmjs.com/package/agenticow">npm</a></p>
+    <p style="font-size:12.5px;color:#5d6b80">Numbers are real, reproduced on the machine described above. <code>npx agenticow bench</code> to verify.</p>
+  </div>
+</footer>
+</body>
+</html>

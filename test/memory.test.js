@@ -97,3 +97,63 @@ test('checkpoint + rollback discards poisoned edits', () => {
   assert.equal(mem.query(good, 1)[0].id, 1, 'clean data survives rollback');
   mem.close();
 });
+
+test('fork: many branches off a static base, all read through', () => {
+  const dir = tmpdir();
+  const base = open(path.join(dir, 'base.rvf'), { dimension: DIM });
+  const recs = [];
+  for (let i = 0; i < 100; i++) recs.push({ id: i, vector: rnd() });
+  base.ingest(recs);
+  const forks = [];
+  for (let i = 0; i < 25; i++) forks.push(base.fork(`u${i}`));
+  // each fork reads through to a base vector and isolates its own insert
+  for (let i = 0; i < 25; i++) {
+    forks[i].ingest([{ id: 500000 + i, vector: rnd() }]);
+    assert.equal(forks[i].query(recs[10].vector, 1)[0].id, 10, 'fork reads base');
+  }
+  // fork 0 must not see fork 1's private insert
+  const v = rnd();
+  forks[1].ingest([{ id: 777, vector: v }]);
+  assert.ok(!forks[0].query(v, 5).map((h) => h.id).includes(777));
+  base.close(); forks.forEach((f) => f.close());
+});
+
+test('diff + promote: branch edits merge into a target', () => {
+  const dir = tmpdir();
+  const prod = open(path.join(dir, 'prod.rvf'), { dimension: DIM });
+  prod.ingest([{ id: 1, vector: rnd() }]);
+  const feature = prod.fork('feature');
+  const v1 = rnd(); const v2 = rnd();
+  feature.ingest([{ id: 100, vector: v1 }, { id: 101, vector: v2 }]);
+  feature.delete([1]);
+  const d = feature.diff();
+  assert.deepEqual(d.added, [100, 101]);
+  assert.deepEqual(d.deleted, [1]);
+  const r = feature.promote(prod);
+  assert.equal(r.ingested, 2);
+  // prod now has the promoted vector
+  assert.equal(prod.query(v1, 1)[0].id, 100);
+  prod.close(); feature.close();
+});
+
+test('save/load: read-through survives a reopen (metric quirk handled)', async () => {
+  const dir = tmpdir();
+  const base = open(path.join(dir, 'base.rvf'), { dimension: DIM });
+  const recs = [];
+  for (let i = 0; i < 80; i++) recs.push({ id: i, vector: rnd() });
+  base.ingest(recs);
+  const br = base.fork('persist', path.join(dir, 'br.rvf'));
+  br.ingest([{ id: 9001, vector: rnd() }]);
+  br.delete([3]);
+  const man = path.join(dir, 'br.json');
+  br.save(man);
+  base.close(); br.close();
+  // reopen from manifest in a "fresh" state
+  const { AgenticMemory } = await import('../src/index.js');
+  const reopened = AgenticMemory.load(man);
+  // read-through still returns the right base vector (id 7), correctly ranked
+  assert.equal(reopened.query(recs[7].vector, 1)[0].id, 7);
+  // tombstone still masked after reopen
+  assert.ok(!reopened.query(recs[3].vector, 5).map((h) => h.id).includes(3));
+  reopened.close();
+});

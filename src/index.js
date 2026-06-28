@@ -32,6 +32,20 @@ function toF32(v) {
   return v instanceof Float32Array ? v : Float32Array.from(v);
 }
 
+// L2-normalize a copy of v. Used when metric is cosine so that ranking is
+// identical whether the engine scores with cosine or L2 — important because the
+// shipped rvf-node binding reopens files with the l2 metric (the cosine setting
+// is not persisted). On unit vectors, L2 distance is monotonic with cosine
+// distance, so top-K is preserved either way.
+function l2normalize(src) {
+  const v = src instanceof Float32Array ? Float32Array.from(src) : Float32Array.from(src);
+  let n = 0;
+  for (let i = 0; i < v.length; i++) n += v[i] * v[i];
+  n = Math.sqrt(n);
+  if (n > 0) for (let i = 0; i < v.length; i++) v[i] /= n;
+  return v;
+}
+
 function tmpChildPath(base, label) {
   const slug = (label || 'branch').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24) || 'branch';
   const rand = crypto.randomBytes(4).toString('hex');
@@ -51,25 +65,33 @@ class Node {
     this.label = label || null;
     this.id = db.fileId();
     this.tombstones = new Set();
+    // Edit log for diff()/promote(). Cheap on small branches; disabled on huge
+    // bases via { track:false } in open().
+    this.editIds = new Set();
+    this.editVecs = new Map();
   }
 }
 
 export class AgenticMemory {
   /** @private */
-  constructor(workingNode, ancestors, dim, metric) {
+  constructor(workingNode, ancestors, dim, metric, track = true) {
     /** @type {Node} */
     this._working = workingNode;
     /** @type {Node[]} ancestors newest -> oldest (base last) */
     this._ancestors = ancestors;
     this._dim = dim;
     this._metric = metric;
+    this._track = track;
+    this._normalize = String(metric).toLowerCase() === 'cosine';
     this._closed = false;
   }
 
   /**
    * Open an existing memory file, or create one if it does not exist.
    * @param {string} filePath
-   * @param {{dimension?:number, metric?:string, m?:number, efConstruction?:number}} [opts]
+   * @param {{dimension?:number, metric?:string, m?:number, efConstruction?:number, track?:boolean}} [opts]
+   *   track (default true): keep an in-memory edit log enabling diff()/promote().
+   *   Set false on very large bases to avoid caching their vectors.
    * @returns {AgenticMemory}
    */
   static open(filePath, opts = {}) {
@@ -91,7 +113,7 @@ export class AgenticMemory {
         ...(opts.efConstruction ? { efConstruction: opts.efConstruction } : {}),
       });
     }
-    return new AgenticMemory(new Node(db, filePath, 'base'), [], dim, metric);
+    return new AgenticMemory(new Node(db, filePath, 'base'), [], dim, metric, opts.track !== false);
   }
 
   /** Full lineage chain, working node first. @returns {Node[]} */
@@ -118,7 +140,7 @@ export class AgenticMemory {
     this._assertOpen();
     let flat, idArr;
     if (records instanceof Float32Array) {
-      flat = records;
+      flat = this._normalize ? Float32Array.from(records) : records;
       idArr = ids;
     } else if (Array.isArray(records)) {
       idArr = records.map((r) => r.id);
@@ -127,9 +149,27 @@ export class AgenticMemory {
     } else {
       throw new Error('agenticow: ingest expects an array of {id,vector} or (Float32Array, ids)');
     }
+    if (this._normalize) {
+      // normalize each row in place (flat is already a private copy here)
+      for (let i = 0; i < idArr.length; i++) {
+        const o = i * this._dim;
+        let n = 0;
+        for (let j = 0; j < this._dim; j++) n += flat[o + j] * flat[o + j];
+        n = Math.sqrt(n);
+        if (n > 0) for (let j = 0; j < this._dim; j++) flat[o + j] /= n;
+      }
+    }
     // A re-ingested id is no longer a delete in this node.
     for (const id of idArr) this._working.tombstones.delete(id);
-    return this._working.db.ingestBatch(flat, idArr);
+    const res = this._working.db.ingestBatch(flat, idArr);
+    if (this._track) {
+      for (let i = 0; i < idArr.length; i++) {
+        const id = idArr[i];
+        this._working.editIds.add(id);
+        this._working.editVecs.set(id, flat.slice(i * this._dim, (i + 1) * this._dim));
+      }
+    }
+    return res;
   }
 
   /**
@@ -146,7 +186,11 @@ export class AgenticMemory {
     } catch {
       /* id may live only in an ancestor; fall through to tombstone */
     }
-    for (const id of ids) this._working.tombstones.add(id);
+    for (const id of ids) {
+      this._working.tombstones.add(id);
+      this._working.editIds.delete(id);
+      this._working.editVecs.delete(id);
+    }
     return { deleted, tombstoned: ids.length };
   }
 
@@ -160,7 +204,7 @@ export class AgenticMemory {
    */
   query(vector, k = 10, opts = {}) {
     this._assertOpen();
-    const qv = toF32(vector);
+    const qv = this._normalize ? l2normalize(vector) : toF32(vector);
     const fetch = Math.max(k, opts.overscan || k * 4);
     const resolved = new Map(); // id -> {id, distance, branch}
     const hidden = new Set(); // ids tombstoned by a nearer descendant
@@ -205,7 +249,79 @@ export class AgenticMemory {
     this._working = new Node(parentChildDb, parentChildPath, 'working');
     // Branch shares the frozen snapshot + all older ancestors.
     const branchNode = new Node(childDb, childPath, label || 'branch');
-    return new AgenticMemory(branchNode, [...this._ancestors], this._dim, this._metric);
+    return new AgenticMemory(branchNode, [...this._ancestors], this._dim, this._metric, this._track);
+  }
+
+  /**
+   * Lightweight fork: derive a child WITHOUT re-pointing this memory. Use this to
+   * fan out many branches off a base you will not mutate again (e.g. spawn 1,000
+   * per-user branches off one shared base). One derive() per fork — ~0.5 ms /
+   * 162 bytes each, O(1) in base size. Read-through isolation holds as long as
+   * the parent base stays read-only after forking.
+   * @param {string} [label]
+   * @param {string} [filePath]
+   * @returns {AgenticMemory}
+   */
+  fork(label, filePath) {
+    this._assertOpen();
+    const childPath = filePath || tmpChildPath(this._working.path, label);
+    const childDb = this._working.db.derive(childPath, this._deriveOpts());
+    const childNode = new Node(childDb, childPath, label || 'fork');
+    return new AgenticMemory(
+      childNode,
+      [this._working, ...this._ancestors],
+      this._dim,
+      this._metric,
+      this._track
+    );
+  }
+
+  /**
+   * Git-style diff of this branch's working node against its nearest ancestor:
+   * which ids were added, overridden, or tombstoned. Requires edit tracking
+   * (open with track !== false).
+   * @returns {{added:number[], overridden:number[], deleted:number[]}}
+   */
+  diff() {
+    this._assertOpen();
+    const ancestorIds = new Set();
+    for (const a of this._ancestors) for (const id of a.editIds) ancestorIds.add(id);
+    const added = [];
+    const overridden = [];
+    for (const id of this._working.editIds) {
+      (ancestorIds.has(id) ? overridden : added).push(id);
+    }
+    return {
+      added: added.sort((a, b) => a - b),
+      overridden: overridden.sort((a, b) => a - b),
+      deleted: [...this._working.tombstones].sort((a, b) => a - b),
+    };
+  }
+
+  /**
+   * Promote (merge) this branch's recorded edits onto a target memory — the
+   * Git-style "branch -> reviewed -> production" workflow. Replays the working
+   * node's ingested vectors and tombstones into `target`. Requires edit tracking.
+   * @param {AgenticMemory} target
+   * @returns {{ingested:number, deleted:number}}
+   */
+  promote(target) {
+    this._assertOpen();
+    if (!(target instanceof AgenticMemory)) {
+      throw new Error('agenticow: promote target must be an AgenticMemory');
+    }
+    const ids = [...this._working.editIds];
+    if (ids.length && this._working.editVecs.size === 0) {
+      throw new Error('agenticow: promote needs tracked edit vectors (open with track:true)');
+    }
+    if (ids.length) {
+      const flat = new Float32Array(ids.length * this._dim);
+      for (let i = 0; i < ids.length; i++) flat.set(this._working.editVecs.get(ids[i]), i * this._dim);
+      target.ingest(flat, ids);
+    }
+    const tomb = [...this._working.tombstones];
+    if (tomb.length) target.delete(tomb);
+    return { ingested: ids.length, deleted: tomb.length };
   }
 
   /**
@@ -290,6 +406,45 @@ export class AgenticMemory {
   /** dimension of stored vectors */
   get dimension() {
     return this._dim;
+  }
+
+  /**
+   * Persist the lineage to a small JSON manifest so the CLI (or another process)
+   * can reopen the exact chain. Vector data stays in the .rvf files; the manifest
+   * holds the chain order, labels, tombstones and (for diff/promote) the working
+   * node's recorded edits.
+   * @param {string} manifestPath
+   */
+  save(manifestPath) {
+    this._assertOpen();
+    const nodes = this._chain().map((n, i) => ({
+      path: path.resolve(n.path),
+      label: n.label,
+      tombstones: [...n.tombstones],
+      // only the working node (i===0) needs its edit vectors for promote()
+      editIds: i === 0 ? [...n.editIds] : [],
+      editVecs: i === 0 ? Object.fromEntries([...n.editVecs].map(([id, v]) => [id, Array.from(v)])) : {},
+    }));
+    fs.writeFileSync(manifestPath, JSON.stringify({ v: 1, dim: this._dim, metric: this._metric, track: this._track, nodes }, null, 2));
+    return manifestPath;
+  }
+
+  /**
+   * Reconstruct an AgenticMemory from a manifest written by save().
+   * @param {string} manifestPath
+   * @returns {AgenticMemory}
+   */
+  static load(manifestPath) {
+    const m = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const nodes = m.nodes.map((nm, i) => {
+      const db = i === 0 ? RvfDatabase.open(nm.path) : RvfDatabase.openReadonly(nm.path);
+      const node = new Node(db, nm.path, nm.label);
+      node.tombstones = new Set(nm.tombstones || []);
+      node.editIds = new Set(nm.editIds || []);
+      node.editVecs = new Map(Object.entries(nm.editVecs || {}).map(([id, v]) => [Number(id), Float32Array.from(v)]));
+      return node;
+    });
+    return new AgenticMemory(nodes[0], nodes.slice(1), m.dim, m.metric, m.track !== false);
   }
 
   /** Close all open handles in the chain. */

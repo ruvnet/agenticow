@@ -23,6 +23,7 @@
   ],
   "scripts": {
     "bench": "node bench/bench.js",
+    "acceptance": "node bench/acceptance.js",
     "demo": "node bin/agenticow.js demo",
     "test": "node --test test/*.test.js"
   },

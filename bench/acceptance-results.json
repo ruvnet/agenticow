@@ -1,0 +1,29 @@
+{
+  "machine": "AMD Ryzen 9 9950X 16-Core Processor",
+  "node": "v22.22.2",
+  "date": "2026-06-28T18:03:01.885Z",
+  "config": {
+    "base": 20000,
+    "branchesTarget": 1000,
+    "dim": 128,
+    "insertsPerBranch": 8,
+    "tombstonesPerBranch": 4,
+    "k": 10
+  },
+  "branchesForked": 1000,
+  "forkMedianMs": 0.4955789999994522,
+  "forkTotalMs": 4535.622719999999,
+  "recallAtK": 1,
+  "exactOrderMatch": 1,
+  "maskViolations": 0,
+  "rollbackP50Ms": 0.5689590000001772,
+  "rollbackMinMs": 0.4731389999997191,
+  "rollbackMaxMs": 0.9619379999994635,
+  "baseBytes": 10401121,
+  "branchTotalBytes": 11030100,
+  "perBranchBytes": 11030.1,
+  "fullCopyEquivBytes": 10401121000,
+  "diskSavingsVsFullCopy": 942.9761289562198,
+  "storageVsBaseRatio": 1.0604722317911695,
+  "pass": true
+}
