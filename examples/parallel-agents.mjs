@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { open } from 'agenticow'; // or '../src/index.js' from inside this repo
+import { open } from '../src/index.js'; // in your project: from 'agenticow'
 
 const DIM = 64;
 const N_AGENTS = 8;

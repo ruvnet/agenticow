@@ -74,7 +74,7 @@ class Node {
 
 export class AgenticMemory {
   /** @private */
-  constructor(workingNode, ancestors, dim, metric, track = true) {
+  constructor(workingNode, ancestors, dim, metric, track = true, owned = null) {
     /** @type {Node} */
     this._working = workingNode;
     /** @type {Node[]} ancestors newest -> oldest (base last) */
@@ -83,6 +83,10 @@ export class AgenticMemory {
     this._metric = metric;
     this._track = track;
     this._normalize = String(metric).toLowerCase() === 'cosine';
+    // Nodes this instance is allowed to close. Ancestors shared from a parent
+    // (via fork/branch) are NOT owned, so closing a fork never closes the base.
+    /** @type {Set<Node>} */
+    this._owned = owned || new Set([workingNode]);
     this._closed = false;
   }
 
@@ -244,10 +248,12 @@ export class AgenticMemory {
     const parentChildDb = frozen.db.derive(parentChildPath, this._deriveOpts());
     const childPath = filePath || tmpChildPath(frozen.path, label);
     const childDb = frozen.db.derive(childPath, this._deriveOpts());
-    // Parent continues, transparently, in its own fresh child.
+    // Parent continues, transparently, in its own fresh child (which it owns).
     this._ancestors = [frozen, ...this._ancestors];
     this._working = new Node(parentChildDb, parentChildPath, 'working');
-    // Branch shares the frozen snapshot + all older ancestors.
+    this._owned.add(this._working);
+    // Branch shares the frozen snapshot + all older ancestors; it owns only its
+    // own working child.
     const branchNode = new Node(childDb, childPath, label || 'branch');
     return new AgenticMemory(branchNode, [...this._ancestors], this._dim, this._metric, this._track);
   }
@@ -339,6 +345,7 @@ export class AgenticMemory {
     const childNode = new Node(childDb, childPath, 'working');
     this._ancestors = [frozen, ...this._ancestors];
     this._working = childNode;
+    this._owned.add(childNode);
     return {
       id: frozen.id,
       label: frozen.label,
@@ -364,18 +371,21 @@ export class AgenticMemory {
       idx = this._ancestors.findIndex((n) => n.id === checkpointId);
       if (idx === -1) throw new Error(`agenticow: checkpoint ${checkpointId} not found`);
     }
-    // Discard the current poisoned working child and any checkpoints newer than target.
-    try {
-      this._working.db.close();
-    } catch { /* ignore */ }
-    try {
-      fs.rmSync(this._working.path, { force: true });
-    } catch { /* ignore */ }
+    // Discard the current poisoned working child and any checkpoints newer than
+    // target — but only ones THIS instance owns (never a shared ancestor).
+    const discarded = [this._working, ...this._ancestors.slice(0, idx)];
+    for (const n of discarded) {
+      if (!this._owned.has(n)) continue;
+      try { n.db.close(); } catch { /* ignore */ }
+      try { fs.rmSync(n.path, { force: true }); } catch { /* ignore */ }
+      this._owned.delete(n);
+    }
     const target = this._ancestors[idx];
     const newAncestors = this._ancestors.slice(idx); // target + older
     const childPath = tmpChildPath(target.path, 'work');
     const childDb = target.db.derive(childPath, this._deriveOpts());
     this._working = new Node(childDb, childPath, 'working');
+    this._owned.add(this._working);
     this._ancestors = newAncestors;
     return { restoredTo: target.id, depth: this._ancestors.length };
   }
@@ -444,13 +454,14 @@ export class AgenticMemory {
       node.editVecs = new Map(Object.entries(nm.editVecs || {}).map(([id, v]) => [Number(id), Float32Array.from(v)]));
       return node;
     });
-    return new AgenticMemory(nodes[0], nodes.slice(1), m.dim, m.metric, m.track !== false);
+    // A loaded instance opened every handle itself, so it owns the whole chain.
+    return new AgenticMemory(nodes[0], nodes.slice(1), m.dim, m.metric, m.track !== false, new Set(nodes));
   }
 
-  /** Close all open handles in the chain. */
+  /** Close the handles this instance owns (never a shared parent/base handle). */
   close() {
     if (this._closed) return;
-    for (const n of this._chain()) {
+    for (const n of this._owned) {
       try { n.db.close(); } catch { /* ignore */ }
     }
     this._closed = true;

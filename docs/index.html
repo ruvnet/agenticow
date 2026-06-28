@@ -376,6 +376,18 @@ agent.<span class="fn">rollback</span>(ckpt.id);  <span class="cm">// poison gon
       <a href="https://github.com/ruvnet/RuVector/pull/617">ruvnet/RuVector PR #617</a>; until it is published,
       agenticow implements read-through in its wrapper over the shipped <code>derive()</code> primitive.
     </div>
+
+    <div style="height:36px"></div>
+    <h2 style="font-size:24px">Runnable examples</h2>
+    <p class="sub">One per use case, in <a href="https://github.com/ruvnet/agenticow/tree/main/examples"><code>examples/</code></a> — <code>node examples/X.mjs</code> or <code>npm run examples</code>. Deterministic output (seeded RNG).</p>
+    <div class="cards">
+      <div class="card"><h3>personalization</h3><p>One base, a cheap COW branch per user — isolation + delta-only storage.</p></div>
+      <div class="card"><h3>rollback-quarantine</h3><p>Poison a branch, discard it → base instantly clean (before/after query).</p></div>
+      <div class="card"><h3>checkpointing</h3><p>Checkpoint every 10 steps, crash at 31, resume from 30 — no replay.</p></div>
+      <div class="card"><h3>git-workflow</h3><p>branch → ingest → <code>diff</code> → <code>promote</code> the agent→test→prod memory pipeline.</p></div>
+      <div class="card"><h3>ab-branches</h3><p>N variant branches, score each, promote the winner (A/B / Darwin-style).</p></div>
+      <div class="card"><h3>parallel-agents</h3><p>Fan out N agent branches off one base, query each, roll one back.</p></div>
+    </div>
   </div>
 </section>
 

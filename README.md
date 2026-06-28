@@ -87,6 +87,133 @@ A worked script lives in [`examples/parallel-agents.mjs`](./examples/parallel-ag
 
 ---
 
+## Applications
+
+Concrete ways to use COW agent memory — each with a runnable script in
+[`examples/`](./examples). Framing is honest: **practical** ships and is proven,
+**strategic** is shipped-but-early, **exotic** is vision/roadmap (clearly marked).
+
+### 🟢 Personalization — one base, a branch per user *(practical)*
+Give every user/account/tenant their own memory branch off a shared base. Private
+edits stay isolated; storage is delta-only (KB/user, not a full copy).
+```js
+const base = open('kb.rvf', { dimension: 1536 });
+const userMem = base.fork(`user-${userId}`);
+userMem.ingest([{ id, vector }]);          // private to this user
+userMem.query(q, 10);                       // reads through to the shared base
+```
+→ [`examples/personalization.mjs`](./examples/personalization.mjs) · [`parallel-agents.mjs`](./examples/parallel-agents.mjs)
+
+### 🟢 Rollback / quarantine — discard a poisoned branch *(practical)*
+An agent ingests hallucinated or adversarial memories into a sandbox branch.
+Detect it, drop the branch — the base is instantly clean, no re-index.
+```js
+const sandbox = base.fork('untrusted');
+sandbox.ingest(unvettedVectors);
+// ...detect bad content...
+sandbox.close();                            // discard → base never saw it
+```
+→ [`examples/rollback-quarantine.mjs`](./examples/rollback-quarantine.mjs)
+
+### 🟢 Checkpointing — crash recovery without replay *(practical)*
+Checkpoint memory before each risky step (162 B each). On failure, roll back to
+the last good checkpoint in ~0.5 ms — earlier steps are not replayed.
+```js
+const ck = mem.checkpoint('step-30');
+// ...step 31 crashes...
+mem.rollback(ck.id);                         // resume from step 30
+```
+→ [`examples/checkpointing.mjs`](./examples/checkpointing.mjs)
+
+### 🟢 Git-style memory workflow — branch → diff → promote *(practical)*
+Treat memory like code: branch a feature, review the change with `diff()`, and
+`promote()` the vetted delta into production.
+```js
+const feature = prod.branch('feature');
+feature.ingest(newFacts);
+feature.diff();                              // { added, overridden, deleted }
+feature.promote(prod);                       // merge into production
+```
+→ [`examples/git-workflow.mjs`](./examples/git-workflow.mjs)
+
+### 🟡 A/B testing & evolution — score variants, promote the winner *(strategic)*
+Fork N variant branches off one base, score each, and promote only the winner.
+The substrate for Darwin-style / population-based agent-memory search.
+```js
+const variants = ids.map((i) => base.fork(`variant-${i}`));
+// ...score each...
+variants[best].promote(base);               // keep the winner, drop the rest free
+```
+→ [`examples/ab-branches.mjs`](./examples/ab-branches.mjs)
+
+### 🟡 Compliance & lineage — provenance-tracked memory *(strategic)*
+Every branch records its parent id + hash and a cryptographic witness chain.
+`lineage()` gives an auditable history of how a memory state was reached —
+useful for reproducibility and audit trails.
+
+### 🟡 Edge / local-first agents — embedded, no server *(strategic)*
+agenticow runs in-process over a single `.rvf` file — no DB server, no network.
+Thousands of cheap branches fit on-device for offline/edge multi-agent memory.
+
+### 🔭 Agent marketplaces & shared base memories *(exotic — vision, not shipped)*
+A published base memory that many agents branch from, contributing deltas back —
+a "memory package registry". The branch/promote primitives exist today; the
+distribution, trust, and merge-policy layer is **roadmap, not shipped**.
+
+---
+
+## MetaHarness usage
+
+agenticow is the **memory plane** of the [`@metaharness/*`](https://www.npmjs.com/org/metaharness)
+agent-harness ecosystem. It pairs with [`@metaharness/jujutsu`](https://www.npmjs.com/package/@metaharness/jujutsu)
+(`v0.1.0`), which wraps [`agentic-jujutsu`](https://www.npmjs.com/package/agentic-jujutsu)
+(a Rust+NAPI Jujutsu `jj` op-log with QuantumDAG coordination, ReasoningBank
+trajectories, and ML-DSA signing) — the **code/op plane**.
+
+**The dual-state bridge (ADR-202).** A coding agent that explores must branch and
+roll back *two* planes: the **code/ops** it did and the **memory** it learned.
+Used separately they drift (revert code but keep poisoned memory; promote a
+memory delta whose ops were never merged). `@metaharness/jujutsu`'s
+`DualStateBridge` ties them 1:1 — one agent ⇒ one op branch + one memory branch —
+mapping four lifecycle verbs onto agenticow:
+
+| Verb | code/op plane (agentic-jujutsu) | memory plane (agenticow) |
+|---|---|---|
+| **spawn** | `jj bookmark create` + start trajectory | `fork()` off the base + `checkpoint('spawn')` |
+| **learn** | finalize trajectory + read op-sequence | embed ops → `ingest()` into the branch |
+| **revert** | `jj undo` | `rollback()` to the spawn checkpoint |
+| **merge** | `jj squash` ops into base | `promote()` the winning delta into the base |
+
+Install alongside (both planes are **optional peer deps** — the bridge runs
+degraded/mock-backed if one is absent, per the ADR-150 *removable-augmentation*
+principle):
+
+```bash
+npm install @metaharness/jujutsu agenticow agentic-jujutsu
+```
+
+```js
+import { open } from 'agenticow';
+// @metaharness/jujutsu wires these two planes behind DualStateBridge:
+const base = open('reasoning-bank.rvf', { dimension: 1536 });
+const agentMem = base.fork('agent-007');     // memory branch (spawn)
+agentMem.checkpoint('spawn');
+agentMem.ingest(embeddedTrajectory);          // learn
+// if the trajectory scores poorly:
+agentMem.rollback(/* spawn checkpoint id */); // revert — code revert via `jj undo`
+// if it wins:
+agentMem.promote(base);                        // merge — ops via `jj squash`
+```
+
+**Honest status (ADR-202):** spawn / learn / revert / merge are **wired
+end-to-end** with both real native planes. **Cross-branch ANN query is stubbed**
+behind a port — agenticow's exact read-through answers it correctly but
+unaccelerated across the COW boundary; the native single-index-across-the-branch
+lands with [ruvnet/RuVector PR #617](https://github.com/ruvnet/RuVector/pull/617),
+at which point only the adapter swaps.
+
+---
+
 ## How copy-on-write for vectors works
 
 ![COW concept](./assets/concept.png)

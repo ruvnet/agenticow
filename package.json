@@ -1,6 +1,6 @@
 {
   "name": "agenticow",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Git for Agent Memory: Copy-On-Write vector branching for embedded multi-agent memory. Branch a base memory in ~0.5ms / 162 bytes regardless of base size — 83x faster, 3000x smaller than full-copy snapshots. Exact read-through queries (parent ∪ edits, child wins).",
   "type": "module",
   "main": "src/index.js",
@@ -27,6 +27,13 @@
     "bench": "node bench/bench.js",
     "acceptance": "node bench/acceptance.js",
     "demo": "node bin/agenticow.js demo",
+    "examples": "for f in personalization rollback-quarantine checkpointing git-workflow ab-branches parallel-agents; do echo \"\\n── $f ──\"; node examples/$f.mjs; done",
+    "example:personalization": "node examples/personalization.mjs",
+    "example:rollback": "node examples/rollback-quarantine.mjs",
+    "example:checkpointing": "node examples/checkpointing.mjs",
+    "example:git-workflow": "node examples/git-workflow.mjs",
+    "example:ab-branches": "node examples/ab-branches.mjs",
+    "example:parallel-agents": "node examples/parallel-agents.mjs",
     "test": "node --test test/*.test.js"
   },
   "keywords": [
