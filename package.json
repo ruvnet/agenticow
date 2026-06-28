@@ -18,6 +18,8 @@
     "src",
     "bin",
     "bench/bench.js",
+    "bench/acceptance.js",
+    "examples",
     "README.md",
     "LICENSE"
   ],
