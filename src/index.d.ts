@@ -30,6 +30,22 @@ export interface QueryOptions {
   efSearch?: number;
   /** Candidates to over-fetch per store before exact merge. Default: k*4. */
   overscan?: number;
+  /**
+   * Force the exact JS chain-walk even on a native-COW fork.
+   * Default false (native path used when available).
+   */
+  forceExact?: boolean;
+}
+
+export interface ForkOptions {
+  /**
+   * Use the native Rust COW dual-graph ANN path (PR #618).
+   * When true, fork() calls RvfDatabase.branch() instead of derive(), giving
+   * the returned fork a working node whose query() spans the COW boundary in
+   * a single Rust call. recall@10 = 1.0 at 1200-vector L2 test corpus.
+   * Default: false (exact JS chain-walk).
+   */
+  nativeAnn?: boolean;
 }
 
 export interface QueryHit {
@@ -73,12 +89,17 @@ export type IngestRecord = { id: number; vector: number[] | Float32Array };
 export class AgenticMemory {
   static open(filePath: string, opts?: OpenOptions): AgenticMemory;
   readonly dimension: number;
+  /**
+   * True when this fork was created with `{nativeAnn:true}`.
+   * query() routes through the Rust dual-graph ANN merge (PR #618).
+   */
+  readonly nativeAnn: boolean;
   ingest(records: IngestRecord[]): IngestResult;
   ingest(vectors: Float32Array, ids: number[]): IngestResult;
   delete(ids: number[]): { deleted: number; tombstoned: number };
   query(vector: number[] | Float32Array, k?: number, opts?: QueryOptions): QueryHit[];
   branch(label?: string, filePath?: string): AgenticMemory;
-  fork(label?: string, filePath?: string): AgenticMemory;
+  fork(label?: string, filePath?: string, opts?: ForkOptions): AgenticMemory;
   diff(): MemoryDiff;
   promote(target: AgenticMemory): { ingested: number; deleted: number };
   checkpoint(label?: string): CheckpointDescriptor;

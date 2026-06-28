@@ -1,6 +1,6 @@
 {
   "name": "agenticow",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Git for Agent Memory: Copy-On-Write vector branching for embedded multi-agent memory. Branch a base memory in ~0.5ms / 162 bytes regardless of base size — 83x faster, 3000x smaller than full-copy snapshots. Exact read-through queries (parent ∪ edits, child wins).",
   "type": "module",
   "main": "src/index.js",
@@ -70,6 +70,6 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@ruvector/rvf-node": "0.1.8"
+    "@ruvector/rvf-node": "^0.2.0"
   }
 }
