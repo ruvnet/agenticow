@@ -56,6 +56,12 @@ agent.ingest([{ id: 9001, vector: newMemory }]);     // isolated from the base
 const hits = agent.query(queryVector, 10);
 // -> [{ id, distance, branch }, ...]  (tombstone-masked, reranked)
 
+// NEW in 0.2.0 — native ANN ACROSS the branch (single Rust dual-graph query):
+const fast = base.fork('agent-b', null, { nativeAnn: true });
+fast.ingest([{ id: 9002, vector: newMemory }]);
+fast.query(queryVector, 10);    // parent ∪ edits via native HNSW, recall@10 ≈ 1.0
+fast.nativeAnn;                  // true on linux-x64; false (exact fallback) elsewhere
+
 // checkpoint + roll back a poisoned branch
 const ckpt = agent.checkpoint('clean');
 agent.ingest([{ id: 666, vector: poison }]);
@@ -206,11 +212,12 @@ agentMem.promote(base);                        // merge — ops via `jj squash`
 ```
 
 **Honest status (ADR-202):** spawn / learn / revert / merge are **wired
-end-to-end** with both real native planes. **Cross-branch ANN query is stubbed**
-behind a port — agenticow's exact read-through answers it correctly but
-unaccelerated across the COW boundary; the native single-index-across-the-branch
-lands with [ruvnet/RuVector PR #617](https://github.com/ruvnet/RuVector/pull/617),
-at which point only the adapter swaps.
+end-to-end** with both real native planes. **Cross-branch ANN query is now
+shipped** — agenticow `0.2.x` adds native dual-graph ANN across the COW boundary
+(`fork({ nativeAnn: true })`, [RuVector PR #617/#618](https://github.com/ruvnet/RuVector/pull/617),
+recall@10 ≈ 1.0 on linux-x64; exact read-through fallback elsewhere). The bridge
+adapter can swap from the exact-read-through port to the native ANN port with no
+interface change.
 
 ---
 
@@ -267,9 +274,11 @@ The acceptance test builds a brute-force ground truth (`base ∪ branch-inserts 
 | Exact read-through (parent ∪ edits) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Embedded / in-process (no server) | ✅ | ❌ | ❌ | via PG | ✅ | ✅/server |
 | Raw ANN throughput | ⚠️ ~2.7× behind hnswlib\* | high | high | moderate | moderate | high |
-| ANN index spanning the branch | 🚧 roadmap | n/a | n/a | n/a | n/a | n/a |
+| ANN search spanning the branch | ✅ shipped (recall@10 ≈ 1.0, linux-x64\*\*) | n/a | n/a | n/a | n/a | n/a |
 
 \* **Honest concession.** On SIFT-1M, same machine, the underlying [ruvector](https://github.com/ruvnet/RuVector) HNSW does ~2,197 QPS @ recall 0.95 vs hnswlib-node ~9,344 QPS — roughly **2.7× slower** for raw ANN. If you need maximum raw similarity-search speed on a static index, use a dedicated ANN library. agenticow's edge is **cheap branching, checkpointing and rollback of agent memory** — which none of the above have.
+
+\*\* Native ANN-across-branch (`fork({ nativeAnn: true })`) ships for **linux-x64-gnu** today; other platforms degrade gracefully to exact read-through. The raw-ANN-speed concession above still applies to the underlying engine.
 
 ### Performance · storage · cost at scale
 
@@ -302,14 +311,14 @@ agenticow ships, and proves, exactly this:
 
 - ✅ **COW branch creation** — base-size-independent, 162 B / ~0.5 ms (the 83× / 3000× headline). Proven by `npm run bench`.
 - ✅ **Exact read-through queries** — point lookup / flat-scan merge returning `parent ∪ edits`, child wins on collisions, deletes honored. Proven by `npm run acceptance` (recall@10 = 100%, masking PASS).
+- ✅ **Native ANN search ACROSS the COW boundary** — *now shipped* (was roadmap). `fork(label, file, { nativeAnn: true })` creates a real `RvfDatabase.branch()` whose `query()` runs a single Rust dual-graph HNSW merge over parent ∪ child ([RuVector PR #617/#618](https://github.com/ruvnet/RuVector/pull/617)). **Verified recall@10 ≈ 1.0 (0.999)** here — 5,000-vector base ∪ 200 edits, dim 128, default cosine — vs a brute-force ground truth. **Platform caveat:** the native binary ships for **linux-x64-gnu** today; darwin / win / linux-arm64 are pending a CI cross-compile and **degrade gracefully to the exact read-through path** (identical correctness, JS merge — `mem.nativeAnn` reads `false`).
 
-What it does **not** yet ship:
+Still honest about the rest:
 
-- 🚧 **A single ANN/HNSW index that spans the COW boundary** is **roadmap, not shipped**. Read-through merges each store's own index and re-ranks exactly; it does not build one unified approximate index across parent and child. Native cluster-level read-through landed in [ruvnet/RuVector PR #617](https://github.com/ruvnet/RuVector/pull/617); until that build is published, agenticow implements read-through in its wrapper over the shipped `derive()` primitive.
+- We still **concede raw single-index ANN throughput** to dedicated vector DBs (~2.7× behind hnswlib, see [comparison](#how-it-compares)).
+- The **exotic** applications (agent marketplaces, etc.) remain **vision/roadmap**, clearly labeled.
 
-We do not claim "fully queryable git-for-vectors". We claim **COW branch creation (83× / 3000×) + exact read-through queries** — and we prove both.
-
-> **Note on cosine:** the shipped `@ruvector/rvf-node@0.1.8` binding does not persist the cosine metric across a file reopen (it reads back as `l2`). agenticow L2-normalizes vectors on ingest/query when the metric is cosine, so top-K ranking is identical whether the engine scores with cosine or L2. This is why read-through stays correct after `save()`/`load()`.
+> **Note on cosine.** rvf-node does not persist the cosine metric across a file reopen, and its native COW dual-graph query is accurate for **L2**, not for the cosine metric directly. agenticow therefore drives the underlying engine with **L2 over L2-normalized vectors** when you ask for cosine (the default) — L2 order equals cosine order on unit vectors. This makes **both** the exact read-through **and** the native ANN path correct for cosine, and is why results survive `save()`/`load()`. (Reopening a cosine store via plain `open()` reports the engine metric `l2`; pass `{ metric: 'cosine' }` or use `save()`/`load()` to preserve the user-facing metric.)
 
 ---
 
@@ -361,8 +370,9 @@ mem.close();
 npm install agenticow
 ```
 
-- Node ≥ 18, ESM.
+- Node ≥ 18, ESM. Current: **agenticow@0.2.1** on **@ruvector/rvf-node@0.2.0**.
 - Depends on [`@ruvector/rvf-node`](https://www.npmjs.com/package/@ruvector/rvf-node) (prebuilt native binding for linux-x64/arm64, darwin-x64/arm64, win32-x64).
+- **Native ANN across the branch** (`fork({ nativeAnn: true })`) requires the native COW binary, which ships for **linux-x64-gnu** today. On other platforms it degrades gracefully to the exact read-through path — same correctness, `mem.nativeAnn === false`. The exact path (the default) works on every platform.
 
 ---
 

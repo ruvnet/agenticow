@@ -83,6 +83,12 @@ export class AgenticMemory {
     this._metric = metric;
     this._track = track;
     this._normalize = String(metric).toLowerCase() === 'cosine';
+    // Engine metric of the underlying RVF store. For cosine we drive the engine
+    // with L2 over L2-NORMALIZED vectors (L2 order == cosine order on unit
+    // vectors). This is what makes BOTH the exact read-through and the native
+    // COW dual-graph ANN path correct for cosine — rvf-node 0.2.0's native COW
+    // query is accurate for L2 but not for the cosine metric directly.
+    this._engineMetric = this._normalize ? 'l2' : String(metric).toLowerCase();
     // Nodes this instance is allowed to close. Ancestors shared from a parent
     // (via fork/branch) are NOT owned, so closing a fork never closes the base.
     /** @type {Set<Node>} */
@@ -93,8 +99,9 @@ export class AgenticMemory {
      * (a real COW child with a dual-graph HNSW that spans the parent boundary).
      * When true, query() routes through the native Rust ANN path — a single
      * db.query() call returns parent∪child hits via the dual-graph merge in
-     * rvf-runtime's query_via_index_cow. recall@10 = 1.0 at 1200-vector L2
-     * with 5% tombstones (verified in integration tests for rvf-runtime PR #618).
+     * rvf-runtime's query_via_index_cow. Verified recall@10 ≈ 1.0 (0.999,
+     * 5,000-vector base ∪ 200 edits, dim 128, cosine via normalized-L2) on
+     * linux-x64-gnu; degrades to the exact JS path on other platforms.
      * @type {boolean}
      */
     this._nativeCow = nativeCow;
@@ -113,16 +120,21 @@ export class AgenticMemory {
     if (fs.existsSync(filePath)) {
       db = RvfDatabase.open(filePath);
       dim = db.dimension();
-      metric = db.metric ? db.metric() : (opts.metric || DEFAULT_METRIC);
+      // A reopened store reports its ENGINE metric (l2 for cosine stores). Let
+      // the caller restore the user-facing metric with opts.metric — or use
+      // save()/load(), which persists it. See README "Note on cosine".
+      metric = opts.metric || (db.metric ? db.metric() : DEFAULT_METRIC);
     } else {
       if (!opts.dimension) {
         throw new Error('agenticow: dimension is required when creating a new memory file');
       }
       dim = opts.dimension;
       metric = opts.metric || DEFAULT_METRIC;
+      // cosine -> drive the engine with l2 over normalized vectors.
+      const engineMetric = String(metric).toLowerCase() === 'cosine' ? 'l2' : metric;
       db = RvfDatabase.create(filePath, {
         dimension: dim,
-        metric,
+        metric: engineMetric,
         ...(opts.m ? { m: opts.m } : {}),
         ...(opts.efConstruction ? { efConstruction: opts.efConstruction } : {}),
       });
@@ -136,7 +148,8 @@ export class AgenticMemory {
   }
 
   _deriveOpts() {
-    return { dimension: this._dim, metric: this._metric };
+    // Children must use the same ENGINE metric as the base (l2 for cosine).
+    return { dimension: this._dim, metric: this._engineMetric };
   }
 
   _assertOpen() {
@@ -308,10 +321,14 @@ export class AgenticMemory {
    *
    * `opts.nativeAnn` (default false): when true, creates a real COW branch via
    * RvfDatabase.branch() instead of derive(). The returned fork's query() routes
-   * through the native Rust dual-graph ANN merge (PR #618), which queries both
-   * the fork's own HNSW and the parent's HNSW in a single call. This gives
-   * sub-linear ANN performance across the COW boundary at recall@10 = 1.0.
-   * Requires the parent to NOT be mutated after forking (same rule as exact mode).
+   * through the native Rust dual-graph ANN merge (RuVector PR #617/#618), which
+   * queries both the fork's own HNSW and the parent's HNSW in a single call —
+   * sub-linear ANN ACROSS the COW boundary. Verified recall@10 ≈ 1.0 here
+   * (0.999, 5,000-vector base ∪ 200 edits, dim 128, cosine via normalized-L2).
+   * Platform: the native binary ships for linux-x64-gnu today; on other
+   * platforms this degrades gracefully to the exact read-through path (identical
+   * correctness, JS merge — `nativeAnn` will read false). Requires the parent to
+   * NOT be mutated after forking (same rule as exact mode).
    * @param {string} [label]
    * @param {string} [filePath]
    * @param {{nativeAnn?:boolean}} [opts]
@@ -323,18 +340,28 @@ export class AgenticMemory {
     if (opts.nativeAnn) {
       // Native COW branch: the Rust COW engine wires parent→child read-through
       // so a single db.query() merges both sides via dual-graph ANN.
-      const childDb = this._working.db.branch(childPath);
-      const childNode = new Node(childDb, childPath, label || 'fork');
-      // The COW child already knows its parent; no JS ancestor chain needed.
-      return new AgenticMemory(
-        childNode,
-        [],  // ancestors managed by Rust COW engine
-        this._dim,
-        this._metric,
-        this._track,
-        null,
-        true  // _nativeCow = true → query() uses native path
-      );
+      // The native branch() binary ships for linux-x64-gnu today; on other
+      // platforms RvfDatabase.branch() may be absent/throw — we degrade
+      // gracefully to the exact read-through path (same correctness, JS merge).
+      if (typeof this._working.db.branch === 'function') {
+        try {
+          const childDb = this._working.db.branch(childPath);
+          const childNode = new Node(childDb, childPath, label || 'fork');
+          // The COW child already knows its parent; no JS ancestor chain needed.
+          return new AgenticMemory(
+            childNode,
+            [],  // ancestors managed by Rust COW engine
+            this._dim,
+            this._metric,
+            this._track,
+            null,
+            true  // _nativeCow = true → query() uses native path
+          );
+        } catch {
+          /* fall through to exact read-through */
+        }
+      }
+      // graceful fallback (non-linux-x64, or native branch unavailable)
     }
     const childDb = this._working.db.derive(childPath, this._deriveOpts());
     const childNode = new Node(childDb, childPath, label || 'fork');

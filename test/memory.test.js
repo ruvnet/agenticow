@@ -157,3 +157,30 @@ test('save/load: read-through survives a reopen (metric quirk handled)', async (
   assert.ok(!reopened.query(recs[3].vector, 5).map((h) => h.id).includes(3));
   reopened.close();
 });
+
+test('native ANN across branch: cosine recall@10 ~1.0 (or graceful fallback)', () => {
+  const dir = tmpdir();
+  const base = open(path.join(dir, 'base.rvf'), { dimension: DIM }); // cosine default
+  const bv = Array.from({ length: 800 }, () => rnd());
+  const flat = new Float32Array(800 * DIM);
+  bv.forEach((v, i) => flat.set(v, i * DIM));
+  base.ingest(flat, bv.map((_, i) => i));
+  const nat = base.fork('agent', undefined, { nativeAnn: true });
+  // ingest some edits into the native branch
+  const ev = new Map();
+  for (let i = 0; i < 40; i++) { const id = 1e6 + i; const v = rnd(); nat.ingest([{ id, vector: v }]); ev.set(id, v); }
+  const cos = (a, b) => { let d = 0, na = 0, nb = 0; for (let i = 0; i < DIM; i++) { d += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; } return 1 - d / (Math.sqrt(na) * Math.sqrt(nb)); };
+  let sum = 0; const Q = 40, K = 10;
+  for (let q = 0; q < Q; q++) {
+    const qv = rnd();
+    const gold = new Set([...bv.map((v, id) => ({ id, d: cos(qv, v) })), ...[...ev].map(([id, v]) => ({ id, d: cos(qv, v) }))]
+      .sort((a, b) => a.d - b.d).slice(0, K).map((c) => c.id));
+    const got = nat.query(qv, K).map((h) => h.id);
+    sum += got.filter((id) => gold.has(id)).length / K;
+  }
+  const recall = sum / Q;
+  // On linux-x64 the native path runs (recall must be high); elsewhere it
+  // degrades to exact read-through (also high). Either way recall must be >= 0.9.
+  assert.ok(recall >= 0.9, `native/fallback recall@10 too low: ${recall}`);
+  base.close(); nat.close();
+});

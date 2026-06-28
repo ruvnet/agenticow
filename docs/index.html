@@ -340,10 +340,10 @@ footer{padding:40px 0;border-top:1px solid var(--border);color:var(--muted);font
         <tr><td>Exact read-through (parent ∪ edits)</td><td class="yes">✓</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td></tr>
         <tr><td>Embedded / in-process (no server)</td><td class="yes">✓</td><td class="no">✗</td><td class="no">✗</td><td class="mid">via PG</td><td class="yes">✓</td><td class="mid">✓/server</td></tr>
         <tr><td>Raw ANN throughput</td><td class="mid">~2.7× behind hnswlib*</td><td class="yes">high</td><td class="yes">high</td><td class="mid">moderate</td><td class="mid">moderate</td><td class="yes">high</td></tr>
-        <tr><td>ANN index spanning the branch</td><td class="mid">roadmap</td><td class="no">n/a</td><td class="no">n/a</td><td class="no">n/a</td><td class="no">n/a</td><td class="no">n/a</td></tr>
+        <tr><td>ANN search spanning the branch</td><td class="yes">✓ shipped (recall@10 ≈ 1.0, linux-x64*)</td><td class="no">n/a</td><td class="no">n/a</td><td class="no">n/a</td><td class="no">n/a</td><td class="no">n/a</td></tr>
       </tbody>
     </table></div>
-    <p class="sub" style="margin-top:14px;font-size:13px">*On SIFT-1M same-machine, the underlying ruvector HNSW does ~2,197 QPS @ recall 0.95 vs hnswlib-node ~9,344 QPS. If you need maximum raw ANN speed on a static index, use a dedicated ANN library. agenticow's edge is cheap branching/checkpointing of agent memory.</p>
+    <p class="sub" style="margin-top:14px;font-size:13px">*On SIFT-1M same-machine, the underlying ruvector HNSW does ~2,197 QPS @ recall 0.95 vs hnswlib-node ~9,344 QPS. If you need maximum raw ANN speed on a static index, use a dedicated ANN library. agenticow's edge is cheap branching/checkpointing of agent memory. Native ANN-across-branch (<code>fork({nativeAnn:true})</code>) ships for linux-x64-gnu today; other platforms degrade gracefully to exact read-through.</p>
   </div>
 </section>
 
@@ -364,17 +364,24 @@ agent.<span class="fn">ingest</span>([{ id: <span class="st">9001</span>, vector
 <span class="cm">// exact read-through: sees the base + its own edits, child wins on collision</span>
 <span class="kw">const</span> hits = agent.<span class="fn">query</span>(queryVector, <span class="st">10</span>);
 
+<span class="cm">// NEW 0.2.0 — native ANN ACROSS the branch (single Rust dual-graph query)</span>
+<span class="kw">const</span> fast = base.<span class="fn">fork</span>(<span class="st">'agent-b'</span>, <span class="kw">null</span>, { nativeAnn: <span class="st">true</span> });
+fast.<span class="fn">query</span>(queryVector, <span class="st">10</span>); <span class="cm">// parent ∪ edits via native HNSW, recall@10 ≈ 1.0</span>
+
 <span class="cm">// checkpoint + rollback a poisoned branch</span>
 <span class="kw">const</span> ckpt = agent.<span class="fn">checkpoint</span>(<span class="st">'clean'</span>);
 agent.<span class="fn">ingest</span>([{ id: <span class="st">666</span>, vector: poison }]);
 agent.<span class="fn">rollback</span>(ckpt.id);  <span class="cm">// poison gone, clean memory intact</span></pre>
     <div class="note" style="margin-top:24px">
-      <b>Honest scope.</b> agenticow ships <b>COW branch creation</b> (the 83×/3000× headline, proven) and
-      <b>exact read-through</b> queries (lookup / flat-scan merge returning parent ∪ edits, child wins, deletes honored).
-      A single ANN/HNSW index that <b>spans the COW boundary</b> is <b>roadmap, not shipped</b> — read-through merges
-      each store's own index and re-ranks exactly. Native cluster-level read-through landed in
-      <a href="https://github.com/ruvnet/RuVector/pull/617">ruvnet/RuVector PR #617</a>; until it is published,
-      agenticow implements read-through in its wrapper over the shipped <code>derive()</code> primitive.
+      <b>Honest scope.</b> agenticow ships <b>COW branch creation</b> (the 83×/3000× headline, proven),
+      <b>exact read-through</b> queries (parent ∪ edits, child wins, deletes honored), and — new in
+      <b>0.2.0</b> — <b>native ANN search ACROSS the COW boundary</b>:
+      <code>fork(label, file, {nativeAnn:true})</code> runs a single Rust dual-graph HNSW query over
+      parent ∪ child (<a href="https://github.com/ruvnet/RuVector/pull/617">RuVector PR #617/#618</a>),
+      <b>verified recall@10 ≈ 1.0 (0.999)</b> at 5,000 base ∪ 200 edits, dim 128, default cosine.
+      <b>Platform:</b> the native binary ships for <b>linux-x64-gnu</b> today; darwin / win / linux-arm64
+      are pending a CI cross-compile and <b>degrade gracefully to exact read-through</b> (identical
+      correctness). We still concede raw single-index ANN throughput to dedicated vector DBs (~2.7× behind hnswlib).
     </div>
 
     <div style="height:36px"></div>
