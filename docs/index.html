@@ -190,6 +190,34 @@ footer{padding:40px 0;border-top:1px solid var(--border);color:var(--muted);font
   </div>
 </section>
 
+<section id="production">
+  <div class="wrap">
+    <h2>Flagship production patterns — runnable + executed</h2>
+    <p class="sub">Four end-to-end use cases, one paradigm: <b>Branch → Mutate → external-Verify → Promote / Discard</b>. Selection is <b>always</b> a deterministic <b>external</b> verifier (test / regex / checker / distance) — <b>never a cheap LM-as-judge</b> (the ablation showed that's a <span class="no">negative</span> selector). These show the branching <i>mechanics</i>, not model intelligence. Numbers below are <b>real measured output</b> (AMD Ryzen 9 9950X, Node v22). Run all: <code>npm run examples:production</code>.</p>
+    <pre><code>import { openBase } from 'agenticow';
+
+const base = openBase('kb.rvf', { dimension: 1536 });
+const sandbox = base.fork('untrusted-doc');           // Branch
+sandbox.ingest(docEmbedding, { text: 'untrusted doc' }); // Mutate
+const hits = sandbox.query(injectionSignature, { topK: 3 });
+const exploit = hits.some(h => h.distance &lt; 0.02);   // external-Verify (deterministic)
+if (exploit) sandbox.rollback();  // Discard — base never poisoned (blast radius 0)
+else         sandbox.promote();   // Promote — vetted delta merged into base</code></pre>
+    <div class="cards">
+      <div class="card"><div class="ico">🛡️</div><h3>red-team-sandbox</h3>
+        <p>Untrusted-doc ingestion behind a COW fork. A deterministic <b>Security-Prober</b> (injection-signature distance probe) gates it: exploit → <code>rollback()</code> in <b>1.1 ms</b>, <span class="yes">0</span> vectors reached base; clean → <code>promote()</code>.</p></div>
+      <div class="card"><div class="ico">🗳️</div><h3>multi-persona-consensus</h3>
+        <p>5 persona branches off one base. An <b>external judge</b> — policy-constraint gate <b>then</b> distance-to-rubric score, <span class="no">not</span> a cheap LM — picks the winner: <b>4/5</b> qualified, winner promoted, losers discarded free.</p></div>
+      <div class="card"><div class="ico">⏪</div><h3>time-travel-debug</h3>
+        <p>24-step migration, checkpoint every 5. A latent bug at step 12 trips a <b>compiler-style check</b> at step 24 → rewind to the step-10 checkpoint in <b>1.1 ms</b>, <span class="yes">0</span> steps replayed, 24/24 reachable.</p></div>
+      <div class="card"><div class="ico">🏢</div><h3>multi-tenant-saas</h3>
+        <p>One mmapped base, <b>1,000</b> isolated tenant branches. An <b>isolation oracle</b> proves no cross-tenant leak: <span class="yes">0/200</span> probes leaked, <b>2.4 KB</b>/tenant, <b>530×</b> less disk than full copies.</p></div>
+    </div>
+    <div style="height:18px"></div>
+    <div class="note"><b>Honest scope.</b> External verifiers only (stated). These demonstrate the Branch→Verify→Promote <i>mechanics</i> — production-ready patterns — not model intelligence. Full outputs in <a href="https://github.com/ruvnet/agenticow/blob/main/examples/README.md#-flagship-production-patterns">examples/README.md</a>.</div>
+  </div>
+</section>
+
 <section id="bench">
   <div class="wrap">
     <h2>Benchmarks — branch create vs full copy</h2>

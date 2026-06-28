@@ -53,6 +53,21 @@ export interface QueryHit {
   distance: number;
   /** label/id of the lineage node the hit came from (which "wins"). */
   branch: string;
+  /** optional text/payload set via ingest(vec,{text}) / ingest([{id,vector,text}]). */
+  text?: string;
+}
+
+export interface IngestPayload {
+  /** explicit id; auto-assigned when omitted. */
+  id?: number;
+  /** optional text/payload stored for this id, surfaced on query hits. */
+  text?: string;
+}
+
+export interface QueryOptionsTopK extends QueryOptions {
+  /** number of nearest neighbors to return (alias of the positional `k`). */
+  topK?: number;
+  k?: number;
 }
 
 export interface CheckpointDescriptor {
@@ -90,7 +105,7 @@ export interface MemoryStatus {
   metric: string;
 }
 
-export type IngestRecord = { id: number; vector: number[] | Float32Array };
+export type IngestRecord = { id: number; vector: number[] | Float32Array; text?: string };
 
 export class AgenticMemory {
   static open(filePath: string, opts?: OpenOptions): AgenticMemory;
@@ -102,12 +117,17 @@ export class AgenticMemory {
   readonly nativeAnn: boolean;
   ingest(records: IngestRecord[]): IngestResult;
   ingest(vectors: Float32Array, ids: number[]): IngestResult;
+  /** Convenience single-vector form: ingest(vec, { text?, id? }). Auto-ids when omitted. */
+  ingest(vector: number[] | Float32Array, payload?: IngestPayload): IngestResult;
   delete(ids: number[]): { deleted: number; tombstoned: number };
   query(vector: number[] | Float32Array, k?: number, opts?: QueryOptions): QueryHit[];
+  /** Convenience options form: query(vec, { topK, efSearch?, overscan? }). */
+  query(vector: number[] | Float32Array, opts: QueryOptionsTopK): QueryHit[];
   branch(label?: string, filePath?: string): AgenticMemory;
   fork(label?: string, filePath?: string, opts?: ForkOptions): AgenticMemory;
   diff(): MemoryDiff;
-  promote(target: AgenticMemory): { ingested: number; deleted: number };
+  /** Promote this branch's edits into `target`; defaults to the fork/branch parent when omitted. */
+  promote(target?: AgenticMemory): { ingested: number; deleted: number };
   checkpoint(label?: string): CheckpointDescriptor;
   rollback(checkpointId?: string): { restoredTo: string; depth: number };
   lineage(): LineageNode[];
@@ -118,9 +138,12 @@ export class AgenticMemory {
 }
 
 export function open(filePath: string, opts?: OpenOptions): AgenticMemory;
+/** Alias of {@link open}; lets `import { openBase }` snippets run verbatim. */
+export function openBase(filePath: string, opts?: OpenOptions): AgenticMemory;
 
 declare const _default: {
   open: typeof open;
+  openBase: typeof openBase;
   AgenticMemory: typeof AgenticMemory;
 };
 export default _default;

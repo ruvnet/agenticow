@@ -27,6 +27,14 @@ const { RvfDatabase } = pkg;
 
 const DEFAULT_METRIC = 'cosine';
 
+// Process-wide monotonic counter for auto-assigned ids (the convenience
+// `ingest(vec, {text})` form with no explicit id). Shared across ALL instances
+// so a base and the branches forked from it never collide on an auto-id — a
+// per-instance counter would hand out the same id on both sides and a later
+// promote() would silently overwrite. Starts high to stay clear of typical
+// caller-assigned ids. Explicit ids are unaffected, so example determinism holds.
+let GLOBAL_AUTO_ID = 9_000_000_000;
+
 /** @param {number[]|Float32Array} v */
 function toF32(v) {
   return v instanceof Float32Array ? v : Float32Array.from(v);
@@ -72,6 +80,9 @@ class Node {
     // bases via { track:false } in open().
     this.editIds = new Set();
     this.editVecs = new Map();
+    // Optional per-id text/payload metadata (set via ingest(vec,{text}) or
+    // ingest([{id,vector,text}])). Surfaced on query hits as `hit.text`.
+    this.texts = new Map();
   }
 }
 
@@ -108,6 +119,13 @@ export class AgenticMemory {
      * @type {boolean}
      */
     this._nativeCow = nativeCow;
+    /**
+     * The memory this instance was forked/branched from, if any. Lets
+     * promote() default its target to the parent — so a documented snippet can
+     * call `branch.promote()` with no argument (merge back into the base).
+     * @type {AgenticMemory|null}
+     */
+    this._parent = null;
   }
 
   /**
@@ -168,6 +186,23 @@ export class AgenticMemory {
    */
   ingest(records, ids) {
     this._assertOpen();
+    // ── Convenience single-vector form: ingest(vec, {text?, id?}) ──────────
+    // `vec` is a single embedding (Float32Array or number[] of length dim) and
+    // the second arg is an options OBJECT (not an ids array). Auto-assigns an id
+    // when none is given and records optional `text` payload. This is what lets
+    // the documented snippet `branch.ingest(vec, { text })` run verbatim.
+    const looksLikeVector =
+      (records instanceof Float32Array || (Array.isArray(records) && typeof records[0] === 'number')) &&
+      records.length === this._dim;
+    const secondIsOpts =
+      ids === undefined || (ids !== null && typeof ids === 'object' && !Array.isArray(ids) && !(ids instanceof Float32Array));
+    if (looksLikeVector && secondIsOpts) {
+      const opts = ids || {};
+      const id = opts.id !== undefined ? opts.id : GLOBAL_AUTO_ID++;
+      if (opts.text !== undefined) this._working.texts.set(id, opts.text);
+      return this.ingest([{ id, vector: records }]);
+    }
+
     let flat, idArr;
     if (records instanceof Float32Array) {
       flat = this._normalize ? Float32Array.from(records) : records;
@@ -176,6 +211,8 @@ export class AgenticMemory {
       idArr = records.map((r) => r.id);
       flat = new Float32Array(records.length * this._dim);
       for (let i = 0; i < records.length; i++) flat.set(toF32(records[i].vector), i * this._dim);
+      // record optional text payloads carried on the records
+      for (const r of records) if (r.text !== undefined) this._working.texts.set(r.id, r.text);
     } else {
       throw new Error('agenticow: ingest expects an array of {id,vector} or (Float32Array, ids)');
     }
@@ -234,6 +271,13 @@ export class AgenticMemory {
    */
   query(vector, k = 10, opts = {}) {
     this._assertOpen();
+    // Convenience form: query(vec, { topK, efSearch?, overscan? }). When the
+    // second arg is an options object, read k from topK/k. Lets the documented
+    // snippet `branch.query(vec, { topK: 5 })` run verbatim.
+    if (k !== null && typeof k === 'object' && !Array.isArray(k)) {
+      opts = k;
+      k = opts.topK ?? opts.k ?? 10;
+    }
     const qv = this._normalize ? l2normalize(vector) : toF32(vector);
     const qopts = opts.efSearch ? { efSearch: opts.efSearch } : undefined;
 
@@ -247,7 +291,7 @@ export class AgenticMemory {
     // 60 new + 20 overrides + 10 tombstones, efSearch=300).
     if (this._nativeCow && !opts.forceExact) {
       const hits = this._working.db.query(qv, k, qopts);
-      return hits.map((h) => ({
+      return hits.map((h) => this._withText({
         id: h.id,
         distance: h.distance,
         branch: this._working.label || this._working.id,
@@ -273,7 +317,24 @@ export class AgenticMemory {
         resolved.set(h.id, { id: h.id, distance: h.distance, branch: node.label || node.id });
       }
     }
-    return [...resolved.values()].sort((a, b) => a.distance - b.distance).slice(0, k);
+    return [...resolved.values()]
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, k)
+      .map((h) => this._withText(h));
+  }
+
+  /** Walk the lineage chain (child→base) for the text payload of an id. */
+  _textFor(id) {
+    for (const node of this._chain()) {
+      if (node.texts.has(id)) return node.texts.get(id);
+    }
+    return undefined;
+  }
+
+  /** Attach a `text` field to a hit when a payload exists for its id. */
+  _withText(hit) {
+    const t = this._textFor(hit.id);
+    return t === undefined ? hit : { ...hit, text: t };
   }
 
   /**
@@ -312,7 +373,9 @@ export class AgenticMemory {
     // Branch shares the frozen snapshot + all older ancestors; it owns only its
     // own working child.
     const branchNode = new Node(childDb, childPath, label || 'branch');
-    return new AgenticMemory(branchNode, [...this._ancestors], this._dim, this._metric, this._track);
+    const child = new AgenticMemory(branchNode, [...this._ancestors], this._dim, this._metric, this._track);
+    child._parent = this; // enables promote() with no explicit target
+    return child;
   }
 
   /**
@@ -351,7 +414,7 @@ export class AgenticMemory {
           const childDb = this._working.db.branch(childPath);
           const childNode = new Node(childDb, childPath, label || 'fork');
           // The COW child already knows its parent; no JS ancestor chain needed.
-          return new AgenticMemory(
+          const nativeChild = new AgenticMemory(
             childNode,
             [],  // ancestors managed by Rust COW engine
             this._dim,
@@ -360,6 +423,8 @@ export class AgenticMemory {
             null,
             true  // _nativeCow = true → query() uses native path
           );
+          nativeChild._parent = this;
+          return nativeChild;
         } catch {
           /* fall through to exact read-through */
         }
@@ -368,13 +433,15 @@ export class AgenticMemory {
     }
     const childDb = this._working.db.derive(childPath, this._deriveOpts());
     const childNode = new Node(childDb, childPath, label || 'fork');
-    return new AgenticMemory(
+    const child = new AgenticMemory(
       childNode,
       [this._working, ...this._ancestors],
       this._dim,
       this._metric,
       this._track
     );
+    child._parent = this; // enables promote() with no explicit target
+    return child;
   }
 
   /**
@@ -408,8 +475,12 @@ export class AgenticMemory {
    */
   promote(target) {
     this._assertOpen();
+    // Default the target to the parent this branch was forked/branched from, so
+    // `branch.promote()` (no argument) merges back into its base — the verb the
+    // documented snippet uses.
+    target = target || this._parent;
     if (!(target instanceof AgenticMemory)) {
-      throw new Error('agenticow: promote target must be an AgenticMemory');
+      throw new Error('agenticow: promote needs a target AgenticMemory (or a parent set by fork()/branch())');
     }
     const ids = [...this._working.editIds];
     if (ids.length && this._working.editVecs.size === 0) {
@@ -419,6 +490,10 @@ export class AgenticMemory {
       const flat = new Float32Array(ids.length * this._dim);
       for (let i = 0; i < ids.length; i++) flat.set(this._working.editVecs.get(ids[i]), i * this._dim);
       target.ingest(flat, ids);
+      // carry text payloads across the promotion
+      for (const id of ids) {
+        if (this._working.texts.has(id)) target._working.texts.set(id, this._working.texts.get(id));
+      }
     }
     const tomb = [...this._working.tombstones];
     if (tomb.length) target.delete(tomb);
@@ -572,4 +647,10 @@ export function open(filePath, opts) {
   return AgenticMemory.open(filePath, opts);
 }
 
-export default { open, AgenticMemory };
+/**
+ * Alias of {@link open}. Provided so documented snippets that read
+ * `import { openBase } from 'agenticow'` run verbatim. Identical behavior.
+ */
+export const openBase = open;
+
+export default { open, openBase, AgenticMemory };

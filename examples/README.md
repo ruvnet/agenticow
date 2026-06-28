@@ -21,6 +21,122 @@ were captured on an AMD Ryzen 9 9950X, Node v22.
 
 ---
 
+## 🏭 Flagship production patterns
+
+Four end-to-end, **runnable + executed** production use cases. Every one follows
+the same paradigm — **Branch → Mutate → external-Verify → Promote / Discard** —
+and every selection is made by a **deterministic EXTERNAL verifier** (a
+test/regex/checker/distance function), **never a cheap LM-as-judge**. The
+scaffolding ablation showed a verifier-gated cheap-LM judge is a *negative*
+selector (picks worse than a plain vote), so the gate here is always something
+that cannot hallucinate. These demonstrate the branching *mechanics* — they do
+not claim model intelligence. Run all four: `npm run examples:production`.
+
+```bash
+node examples/red-team-sandbox.mjs
+node examples/multi-persona-consensus.mjs
+node examples/time-travel-debug.mjs
+node examples/multi-tenant-saas.mjs
+```
+
+### `red-team-sandbox.mjs` — untrusted-doc ingestion, exploit → rollback / clean → promote
+
+An agent ingests untrusted document embeddings into a **forked** branch. An
+external **Security-Prober** (deterministic: does a doc land within EPS of a
+known injection signature / does the planted marker surface?) gates it. Exploit →
+`rollback()` (blast radius 0, base never poisoned); clean → `promote()`. Both
+paths shown.
+
+```
+base: 3000 trusted vectors
+
+── batch A (clean) ──
+  prober: scanned 4 injection signatures × top-3 → 0 exploit hits, marker present=false
+  verdict: CLEAN → promote()  (base 3000 → 3040)
+
+── batch B (poisoned: 1 doc carries an injection marker) ──
+  prober: scanned 4 injection signatures × top-3 → 1 exploit hits, marker present=true
+    exploit: doc id 770002 matches signature "ignore-previous-instructions" (dist 0.0000 < 0.02)
+  verdict: EXPLOIT → rollback() in 1.142 ms  (blast radius: 0 vectors reached base)
+
+── base integrity after both paths ──
+  base vectors: 3040  (3000 + 40 clean, 0 poisoned)
+  injection marker reachable from base = false
+  base never poisoned = true
+```
+
+### `multi-persona-consensus.mjs` — 5 persona branches, an external judge, 1 winner
+
+5 single-turn persona branches off one base, each proposing one answer. An
+**external deterministic judge** — a hard-constraint policy gate (boolean
+checker) **then** a distance-to-rubric score among the qualified, **not** a cheap
+LM — picks the winner; only the winner's delta is promoted.
+
+```
+base: 1500 shared vectors; 5 personas each propose 1 answer into a branch
+  compliance-auditor   score=0.0000  constraint=PASS   ← qualified
+  perf-optimizer       score=0.0152  constraint=PASS   ← qualified
+  ux-advocate          score=0.0809  constraint=PASS   ← qualified
+  security-cynic       score=0.1792  constraint=PASS   ← qualified
+  cost-minimizer       score=  n/a   constraint=FAIL (forbidden region)  ✗ disqualified
+external judge → winner: "compliance-auditor" (score 0.0000, 4/5 qualified)
+promoted winner delta into base (1500 → 1501); 4 losing branches discarded for free
+winner answer now reachable in base = true ; any loser reachable in base = false
+```
+
+> Honest framing: this is ensemble **mechanics** with an external selector — the
+> pattern the ablation showed is the RIGHT one, vs a cheap-LM judge which backfires.
+
+### `time-travel-debug.mjs` — checkpoint a long migration; rewind past a latent bug
+
+A 24-step migration checkpoints every 5 steps (162 B each). A "hallucinated
+signature" injected at step 12 is **latent** — only an external deterministic
+compiler-check at step 24 trips. Root-cause → rewind to the **step-10**
+checkpoint (`rollback()`, sub-ms) → inject corrective path → resume 11→24. **No
+full replay; delta-sized cost.**
+
+```
+migration: 24 steps, checkpoint every 5  (hallucinated signature injected at step 12)
+  checkpoint @ step  5 : id 238aea9f26…(162 B, depth 1)
+  checkpoint @ step 10 : id f320e91c46…(162 B, depth 2)
+  checkpoint @ step 15 : id aa008f387e…(162 B, depth 3)   ← already contains the step-12 poison
+  checkpoint @ step 20 : id d94dd3b615…(162 B, depth 4)   ← already contains the step-12 poison
+step 24 compiler-check: FAIL — bad signature reachable (op id 1012 @ dist 0.0000)
+  root cause: op id 1012 = migration step 12 (hallucinated signature)
+  newest clean checkpoint at/before step 12 → checkpoint @ step 10
+  rewind: rollback() to step-10 checkpoint in 1.100 ms (steps 1–10 NOT replayed)
+  inject corrective op at step 11, resume 11→24 …
+after rewind+resume compiler-check: PASS
+  ingest() calls: 24 (initial) + 14 (resume 11→24) = 38   ·   replayed steps 1–10: 0
+  final memory steps reachable: 24/24  ·  poison reachable = false
+```
+
+### `multi-tenant-saas.mjs` — one mmapped base, 1,000 isolated tenant branches
+
+One memory-mapped base shared read-only by **1,000** tenant branches, each with
+private deltas. An external **isolation oracle** proves tenant A's query never
+returns tenant B's private data (200 random probes), reports per-tenant storage,
+and serializes + evicts one tenant (right-to-erasure).
+
+```
+base: 5000 shared vectors, 1.26 MB (memory-mapped, read-only)
+forked 1000 tenant branches in 1896.9 ms (1.90 ms/tenant), 3 private docs each
+── cross-tenant isolation oracle (200 random A→B probes) ──
+  probes where B's private doc leaked into A's top-10: 0 / 200   → ISOLATION: PASS
+  sample: tenant-0 query near tenant-1's private doc → top id 1001000? NO (got id 2896)
+── storage ──
+  per-tenant delta: 2.4 KB   ·   1000 tenants total: 2.38 MB
+  vs 1000 full copies of the base: 1259.43 MB   →   530x less disk
+  total branch storage = 1.89x the base (grows with delta, not base)
+── serialize + evict one tenant ──
+  saved tenant-500 manifest (6.5 KB) → then evicted (close + rm)
+  after eviction: tenant-500 reachable = false ; tenant-499 intact = true ; base intact = 5000
+```
+
+> Scale knob: `TENANTS=5000 node examples/multi-tenant-saas.mjs`.
+
+---
+
 ### `personalization.mjs` — one base, a cheap branch per user
 
 A shared base + an isolated COW branch per user. Private edits stay private;

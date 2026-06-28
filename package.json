@@ -29,7 +29,8 @@
     "bench:ladder": "node bench/claim-ladder.js",
     "acceptance": "node bench/acceptance.js",
     "demo": "node bin/agenticow.js demo",
-    "examples": "for f in personalization rollback-quarantine checkpointing git-workflow ab-branches parallel-agents promotion-pipeline compliance-lineage ab-at-scale parallel-selves memory-evolution simulated-org; do echo \"\\n══ $f ══\"; node examples/$f.mjs; done",
+    "examples": "for f in red-team-sandbox multi-persona-consensus time-travel-debug multi-tenant-saas personalization rollback-quarantine checkpointing git-workflow ab-branches parallel-agents promotion-pipeline compliance-lineage ab-at-scale parallel-selves memory-evolution simulated-org; do echo \"\\n══ $f ══\"; node examples/$f.mjs; done",
+    "examples:production": "for f in red-team-sandbox multi-persona-consensus time-travel-debug multi-tenant-saas; do echo \"\\n══ $f ══\"; node examples/$f.mjs; done",
     "examples:platform": "for f in promotion-pipeline compliance-lineage ab-at-scale; do echo \"\\n══ $f ══\"; node examples/$f.mjs; done",
     "examples:exotic": "for f in parallel-selves memory-evolution simulated-org; do echo \"\\n══ $f ══\"; node examples/$f.mjs; done",
     "test": "node --test test/*.test.js"

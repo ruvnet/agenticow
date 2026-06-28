@@ -100,6 +100,47 @@ Concrete ways to use COW agent memory — each with a runnable script in
 acceptance), **platform** = DEMONSTRATED + benchmarked, **exotic** = PoC mechanics
 (cognition out of scope). See the [claim ladder](#claim-ladder).
 
+### 🏭 Flagship production patterns *(runnable + executed)*
+
+Four end-to-end production use cases, all following one paradigm —
+**Branch → Mutate → external-Verify → Promote / Discard**. Selection is **always**
+a deterministic **external** verifier (test / regex / checker / distance
+function), **never a cheap LM-as-judge** — the scaffolding ablation showed a
+verifier-gated cheap-LM judge picks *worse* than a plain vote (a negative
+generation–verification gap), so the gate must be something that can't
+hallucinate. These demonstrate the branching **mechanics** (production-ready
+patterns), not model intelligence. Run all four: `npm run examples:production`.
+
+**Implement right now** (this snippet runs verbatim against the published API —
+`openBase`, `ingest(vec,{text})`, `query(vec,{topK})`, `promote()`, `rollback()`):
+
+```js
+import { openBase } from 'agenticow';
+
+const base = openBase('kb.rvf', { dimension: 1536 });
+
+// Branch → Mutate: an untrusted batch lands in an isolated fork, never the base.
+const sandbox = base.fork('untrusted-doc');
+sandbox.ingest(docEmbedding, { text: 'untrusted document' });
+
+// external-Verify: a deterministic checker (NOT an LM-judge) gates the branch.
+const hits = sandbox.query(injectionSignature, { topK: 3 });
+const exploit = hits.some((h) => h.distance < 0.02);   // distance threshold = the oracle
+
+// Promote / Discard:
+if (exploit) sandbox.rollback();   // discard — base never saw it (blast radius 0)
+else         sandbox.promote();    // merge the vetted delta into the base
+```
+
+| Use case | External verifier (deterministic) | Measured result |
+|---|---|---|
+| 🛡️ [`red-team-sandbox.mjs`](./examples/red-team-sandbox.mjs) — untrusted-doc ingestion | injection-signature distance probe | exploit→`rollback()` **1.1 ms**, **0** vectors reached base; clean→`promote()` |
+| 🗳️ [`multi-persona-consensus.mjs`](./examples/multi-persona-consensus.mjs) — 5 personas, 1 winner | policy-constraint gate **+** distance-to-rubric score | **4/5** qualified, winner promoted, losers discarded free |
+| ⏪ [`time-travel-debug.mjs`](./examples/time-travel-debug.mjs) — rewind past a latent bug | compiler-style bad-signature scan | rewind to step-10 ckpt **1.1 ms**, **0** steps replayed, 24/24 reachable |
+| 🏢 [`multi-tenant-saas.mjs`](./examples/multi-tenant-saas.mjs) — 1,000 tenant branches | cross-tenant isolation oracle (200 probes) | **0/200** leaks, **2.4 KB**/tenant, **530×** less disk than full copies |
+
+→ outputs + details in [`examples/README.md`](./examples/README.md#-flagship-production-patterns).
+
 ### 🟢 Personalization — one base, a branch per user *(practical)*
 Give every user/account/tenant their own memory branch off a shared base. Private
 edits stay isolated; storage is delta-only (KB/user, not a full copy).
