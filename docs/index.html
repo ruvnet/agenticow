@@ -171,6 +171,25 @@ footer{padding:40px 0;border-top:1px solid var(--border);color:var(--muted);font
   </div>
 </section>
 
+<section id="patterns">
+  <div class="wrap">
+    <h2>Deployment patterns — what the data says</h2>
+    <p class="sub"><b>Smarter orchestration, not smarter execution.</b> Each pattern cites a head-to-head scaffolding ablation on cheap models (FRAMES, <code>deepseek-v4-pro</code> + <code>glm-5.2</code>, n=50, strict EM, reasoning OFF) — <a href="https://github.com/ruvnet/agent-harness-generator/blob/main/docs/research/scaffolding/SCAFFOLDING-ABLATION.md">SCAFFOLDING-ABLATION.md</a>.</p>
+    <div class="cards">
+      <div class="card"><div class="ico">⚡</div><h3>Fail-fast, shallow branches</h3>
+        <p>Deep self-refine <b>backfires</b> on cheap models: Plan-and-Solve <span class="no">−10pp</span>, Reflexion <span class="no">−8pp at 2.85× cost</span>, and ReAct saturates ~8–12 steps. So run 2–3-turn tasks; on failure <b>drop the branch (~0.5 ms) and respawn</b> — don't force self-correction.</p></div>
+      <div class="card"><div class="ico">↔️</div><h3>Scale horizontally</h3>
+        <p>Cheap models win on the first shot; the only gain (Self-Consistency +4–6pp) saturates by N≈7. The product win is multi-tenant scale: <b>1,000 isolated branches at 943× less disk</b>. Many shallow agents, not one deep one.</p></div>
+      <div class="card"><div class="ico">🔒</div><h3>External, deterministic gates</h3>
+        <p>A cheap LM-as-judge picks <b>worse</b> than majority vote (<span class="no">−4 to −6pp</span>). Gate <code>promote</code> with tests / compilers / schemas / a human — never the cheap model. <b>Nuance:</b> on code, tests are a zero-cost oracle, so test-gated promotion <i>is</i> strong (the bridge to <a href="#usage">@metaharness/jujutsu</a>).</p></div>
+      <div class="card"><div class="ico">🧩</div><h3>Infra layer, not a brain</h3>
+        <p>agenticow is <b>Git for agent memory</b>, not a cognitive enhancer. Like Git, it lets thousands work concurrently, isolate, roll back, merge through CI — it makes cheap-model fleets governed, isolated, ~free. It does <b>not</b> make them smarter (RAG null + scaffolds backfired).</p></div>
+    </div>
+    <div style="height:18px"></div>
+    <div class="note"><b>Honest framing.</b> The data says nothing at the orchestration layer reliably makes a cheap model <i>smarter</i> — RAG was null and every reasoning scaffold backfired or failed to pay for itself. agenticow's claim is <b>leverage, not intelligence</b>: infrastructure that turns "run 1,000 cheap agents safely" into a near-free, auditable operation.</div>
+  </div>
+</section>
+
 <section id="bench">
   <div class="wrap">
     <h2>Benchmarks — branch create vs full copy</h2>

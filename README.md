@@ -238,6 +238,75 @@ interface change.
 
 ---
 
+## Deployment patterns (what the data says)
+
+**Thesis: smarter *orchestration*, not smarter *execution*.** When you run cheap
+models at scale, the lever is *how you spawn, branch, select, and roll back* — not
+squeezing more "intelligence" out of any single run. This isn't a slogan: it's what
+a head-to-head scaffolding ablation on FRAMES (cheap models `deepseek-v4-pro` +
+`glm-5.2`, n=50, strict EM, Wilson CIs, reasoning OFF) actually measured. Every
+pattern below cites that finding. Full study + reproduce script:
+[`SCAFFOLDING-ABLATION.md`](https://github.com/ruvnet/agent-harness-generator/blob/main/docs/research/scaffolding/SCAFFOLDING-ABLATION.md).
+
+### 1. Fail-fast, shallow branches — not deep self-refine loops
+
+The ablation showed that *adding reasoning machinery to a cheap model backfires*:
+**Plan-and-Solve −10pp** (deepseek 0.50→0.40) / **−6pp** (glm 0.42→0.36),
+**Reflexion −8pp at 2.85× cost** (8.2→21.4 steps, "cost without lift"), and the
+**PS+BoN compound stacks the damage** (deepseek vote 0.48 < plain-BoN 0.56). The
+base ReAct loop already **saturates around 8–12 steps** — a turn-budget cliff where
+more steps stop discovering and just give error-compounding more surface area.
+
+**So:** run **2–3-turn tasks**. On failure, don't force the cheap model to
+self-correct — **drop the branch (~0.5 ms rollback) and respawn** with a shifted
+prompt / clean state. agenticow makes failure *free*, so "throw it away and try a
+fresh independent attempt" beats "make it reflect on its mistake."
+
+### 2. Scale horizontally — massively parallel personalization
+
+Cheap models are at their best on the **first shot**; the ablation found no
+reasoning scaffold buys a cost-justified lift, and the *only* directional gain
+(Self-Consistency, +4–6pp) **saturates by N≈7** and costs ~10× — i.e. the win is in
+*more independent attempts*, not deeper ones. The product win is therefore
+**multi-tenant scale**: agenticow runs **1,000 isolated branches at 943× less disk**
+than 1,000 full copies (10.5 MB vs 9.69 GB; see [acceptance](#acceptance-the-1000-branch-proof)).
+**Many shallow agents off one base, not one deep agent.**
+
+### 3. Selection must be EXTERNAL + deterministic — never the cheap LM as judge
+
+The ablation's cleanest negative result: a **verifier-gated LM-judge picks *worse*
+than a plain majority vote off the same samples** (deepseek **−4pp**, glm **−6pp**) —
+a *negative* generation-verification gap. A cheap model judging its own outputs,
+with no oracle, is a worse selector than counting votes.
+
+**So for promotion / merge (`diff` → `promote`), score branches with an EXTERNAL,
+deterministic signal:** unit tests, compilers, regex / schema validators, a
+human-gate — **not** the cheap model. The branch primitive gives you the isolation;
+the *gate* must be something that can't hallucinate.
+
+**The nuance — an execution oracle flips this.** That backfire was on FRAMES, which
+has *no* ground-truth verifier. On **code**, tests are a **zero-cost, near-perfect
+verifier** — so promotion-by-test-verification *is* strong there (the ablation
+explicitly flags SWE-bench-style execution as the case where the verifier gap goes
+positive). This is exactly the bridge to
+[`@metaharness/jujutsu`](#metaharness-usage): **code branches gated by tests**, where
+the gate is an execution oracle, not a model.
+
+### 4. Positioning — Infrastructure/DevOps layer, not a cognitive enhancer
+
+agenticow is **Git for agent memory**, not a way to make agents *smarter*. Git
+doesn't make developers write better code — it lets thousands of them work
+concurrently, isolate mistakes, roll back, and merge through CI. agenticow is the
+same shape for cheap-model fleets: it makes running them at scale **governed,
+isolated, auditable, and ~computationally free** (162 B / 0.5 ms branch; instant
+rollback; lineage for right-to-erasure). It does **not** make the models smarter —
+and the data says nothing at the orchestration layer reliably does: RAG was null and
+*every* reasoning scaffold backfired or failed to pay for itself on cheap models.
+**The honest claim is leverage, not intelligence:** infrastructure that turns "run
+1,000 cheap agents safely" into a tractable, near-free operation.
+
+---
+
 ## How copy-on-write for vectors works
 
 ![COW concept](./assets/concept.png)
