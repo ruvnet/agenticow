@@ -290,7 +290,7 @@ else         sandbox.promote();   // Promote — vetted delta merged into base</
           <td><b>agenticow (COW)</b></td>
           <td class="yes">0.47 ms / 162 B <span class="measured">measured, flat to 1M</span></td>
           <td class="yes">~10.8 KB <span class="measured">measured</span></td>
-          <td class="mid">~2.7× behind hnswlib <span class="est">measured*</span></td>
+          <td class="mid">~6.3× behind hnswlib @ 1M <span class="est">measured*</span></td>
           <td class="yes">~507 MB local · ~$0 infra (embedded) <span class="measured">measured†</span></td>
           <td class="yes">✓ instant (p50 0.57 ms)</td>
         </tr>
@@ -360,7 +360,7 @@ else         sandbox.promote();   // Promote — vetted delta merged into base</
       checkpointing, and rollback of agent memory.
     </p>
     <p class="sub" style="margin-top:12px;font-size:12.5px">
-      * SIFT-1M same-machine: ruvector HNSW ~2,197 QPS @ recall 0.95 vs hnswlib-node ~9,344 QPS.
+      * SIFT-1M same-machine (matched recall@10 ≈ 0.97): ruvector HNSW is ~6.3× behind a dedicated flat-index engine like hnswlib-node at 1M-vector scale (~2.7× on small in-cache sets; the earlier ~2.7× was a 100K-vector synthetic set that fit in L3 cache). Deliberate trade — agenticow competes on memory versioning/isolation/rollback, not raw search speed; narrowing levers (graph-quality shrink-heuristic + stack-local heaps) are on the ruvector-engine roadmap.
       † agenticow base (~496 MB) + 1,000 × ~10.8 KB ≈ 507 MB; runs in-process, no managed infra.
       ¹ Pinecone serverless storage est. from <a href="https://www.pinecone.io/pricing/">pinecone.io/pricing</a>
       (~$0.33/GB-month) — storage only, excludes read/write units. ² Milvus / Zilliz Cloud est. from
@@ -386,11 +386,11 @@ else         sandbox.promote();   // Promote — vetted delta merged into base</
         <tr><td>Snapshot mechanism</td><td class="yes">COW delta</td><td class="mid">full copy</td><td class="mid">full copy</td><td class="mid">SQL dump</td><td class="mid">full copy</td><td class="mid">full copy</td></tr>
         <tr><td>Exact read-through (parent ∪ edits)</td><td class="yes">✓</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td></tr>
         <tr><td>Embedded / in-process (no server)</td><td class="yes">✓</td><td class="no">✗</td><td class="no">✗</td><td class="mid">via PG</td><td class="yes">✓</td><td class="mid">✓/server</td></tr>
-        <tr><td>Raw ANN throughput</td><td class="mid">~2.7× behind hnswlib*</td><td class="yes">high</td><td class="yes">high</td><td class="mid">moderate</td><td class="mid">moderate</td><td class="yes">high</td></tr>
+        <tr><td>Raw ANN throughput</td><td class="mid">~6.3× behind hnswlib @ 1M*</td><td class="yes">high</td><td class="yes">high</td><td class="mid">moderate</td><td class="mid">moderate</td><td class="yes">high</td></tr>
         <tr><td>ANN search spanning the branch</td><td class="yes">✓ shipped (recall@10 ≈ 1.0, linux-x64*)</td><td class="no">n/a</td><td class="no">n/a</td><td class="no">n/a</td><td class="no">n/a</td><td class="no">n/a</td></tr>
       </tbody>
     </table></div>
-    <p class="sub" style="margin-top:14px;font-size:13px">*On SIFT-1M same-machine, the underlying ruvector HNSW does ~2,197 QPS @ recall 0.95 vs hnswlib-node ~9,344 QPS. If you need maximum raw ANN speed on a static index, use a dedicated ANN library. agenticow's edge is cheap branching/checkpointing of agent memory. Native ANN-across-branch (<code>fork({nativeAnn:true})</code>) ships for linux-x64-gnu today; other platforms degrade gracefully to exact read-through.</p>
+    <p class="sub" style="margin-top:14px;font-size:13px">*On a measured SIFT-1M benchmark (same machine, matched recall@10 ≈ 0.97), the underlying ruvector HNSW is ~6.3× behind a dedicated flat-index engine like hnswlib at 1M-vector scale (~2.7× on small in-cache sets — the earlier figure was a 100K-vector synthetic set that fit in L3 cache; the gap widens at 1M). This is a deliberate trade: agenticow does not compete on raw single-index search throughput — its unique capability is memory versioning, isolation, and lifecycle governance for multi-tenant agent fleets (1,000 parallel isolated reversible branches at ~0.5 ms/fork, which no flat ANN engine offers). Future levers to narrow the gap (graph-quality shrink-heuristic + stack-local heaps) are on the ruvector-engine roadmap, not agenticow's pitch. If you need maximum raw ANN speed on a static index, use a dedicated ANN library. Native ANN-across-branch (<code>fork({nativeAnn:true})</code>) ships for linux-x64-gnu today; other platforms degrade gracefully to exact read-through.</p>
   </div>
 </section>
 
@@ -428,7 +428,7 @@ agent.<span class="fn">rollback</span>(ckpt.id);  <span class="cm">// poison gon
       <b>verified recall@10 ≈ 1.0 (0.999)</b> at 5,000 base ∪ 200 edits, dim 128, default cosine.
       <b>Platform:</b> the native binary ships for <b>linux-x64-gnu</b> today; darwin / win / linux-arm64
       are pending a CI cross-compile and <b>degrade gracefully to exact read-through</b> (identical
-      correctness). We still concede raw single-index ANN throughput to dedicated vector DBs (~2.7× behind hnswlib).
+      correctness). We still concede raw single-index ANN throughput to dedicated vector DBs (~6.3× behind a dedicated flat-index engine like hnswlib at 1M-vector scale, matched recall@10 ≈ 0.97; ~2.7× on small in-cache sets) — a deliberate trade, since agenticow competes on memory versioning/isolation/rollback, not raw search speed.
     </div>
 
     <div style="height:36px"></div>

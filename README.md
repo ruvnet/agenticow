@@ -400,10 +400,10 @@ The acceptance test builds a brute-force ground truth (`base ∪ branch-inserts 
 | Snapshot mechanism | COW delta | full copy | full copy | SQL dump | full copy | full copy |
 | Exact read-through (parent ∪ edits) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Embedded / in-process (no server) | ✅ | ❌ | ❌ | via PG | ✅ | ✅/server |
-| Raw ANN throughput | ⚠️ ~2.7× behind hnswlib\* | high | high | moderate | moderate | high |
+| Raw ANN throughput | ⚠️ ~6.3× behind hnswlib @ 1M\* | high | high | moderate | moderate | high |
 | ANN search spanning the branch | ✅ shipped (recall@10 ≈ 1.0, linux-x64\*\*) | n/a | n/a | n/a | n/a | n/a |
 
-\* **Honest concession.** On SIFT-1M, same machine, the underlying [ruvector](https://github.com/ruvnet/RuVector) HNSW does ~2,197 QPS @ recall 0.95 vs hnswlib-node ~9,344 QPS — roughly **2.7× slower** for raw ANN. If you need maximum raw similarity-search speed on a static index, use a dedicated ANN library. agenticow's edge is **cheap branching, checkpointing and rollback of agent memory** — which none of the above have.
+\* **Honest concession (deliberate trade).** On a measured SIFT-1M benchmark (same machine, matched recall@10 ≈ 0.97), the underlying [ruvector](https://github.com/ruvnet/RuVector) HNSW is **~6.3× behind a dedicated flat-index engine like hnswlib at 1M-vector scale** (~2.7× on small in-cache sets). The earlier ~2.7× figure was a 100K-vector synthetic set that fit in L3 cache; the gap widens at 1M-vector scale. This is by design: agenticow deliberately does **not** compete on raw single-index search throughput — its unique capability is **memory versioning, isolation, and lifecycle governance for multi-tenant agent fleets** (1,000 parallel isolated reversible branches at ~0.5 ms/fork, which no flat ANN engine offers). The bigger the raw-speed gap, the clearer the "different tool for a different job" message. Future levers to narrow it (graph-quality shrink-heuristic + stack-local heaps) are on the **ruvector-engine roadmap**, not agenticow's pitch. If you need maximum raw similarity-search speed on a static index, use a dedicated ANN library.
 
 \*\* Native ANN-across-branch (`fork({ nativeAnn: true })`) ships for **linux-x64-gnu** today; other platforms degrade gracefully to exact read-through. The raw-ANN-speed concession above still applies to the underlying engine.
 
@@ -413,7 +413,7 @@ The acceptance test builds a brute-force ground truth (`base ∪ branch-inserts 
 
 | Approach | Branch / snapshot create | Per-branch storage | Query latency (ANN) | Cost @ 1,000 branches | Native COW / rollback |
 |---|---|---|---|---|---|
-| **agenticow (COW)** | 0.47 ms / 162 B *(measured, flat to 1M)* | ~10.8 KB *(measured)* | ~2.7× behind hnswlib *(measured\*)* | ~507 MB local · **~$0** infra (embedded) *(measured†)* | ✅ instant (p50 0.57 ms) |
+| **agenticow (COW)** | 0.47 ms / 162 B *(measured, flat to 1M)* | ~10.8 KB *(measured)* | ~6.3× behind hnswlib @ 1M *(measured\*)* | ~507 MB local · **~$0** infra (embedded) *(measured†)* | ✅ instant (p50 0.57 ms) |
 | Naive full-copy | 67 ms / 496 MB *(measured @1M)* | full base (~496 MB) | = source engine | ~484 GB local *(measured ×N)* | ❌ |
 | Pinecone (serverless) | no native branch — full re-upsert | full copy (managed) | fast (core strength) | ~484 GB ≈ **$160/mo** storage + units *(est.¹)* | ❌ |
 | Milvus | snapshot = full copy / reindex | full copy | fast (core strength) | ~484 GB resident → large cluster, **$$$/mo** *(est.²)* | ❌ |
@@ -442,7 +442,7 @@ agenticow ships, and proves, exactly this:
 
 Still honest about the rest:
 
-- We still **concede raw single-index ANN throughput** to dedicated vector DBs (~2.7× behind hnswlib, see [comparison](#how-it-compares)).
+- We still **concede raw single-index ANN throughput** to dedicated vector DBs — ~6.3× behind a dedicated flat-index engine like hnswlib at 1M-vector scale (matched recall@10 ≈ 0.97; ~2.7× on small in-cache sets). It's a **deliberate trade** — agenticow competes on memory versioning/isolation/rollback, not raw search speed (see [comparison](#how-it-compares)).
 - The **exotic** applications (agent marketplaces, etc.) remain **vision/roadmap**, clearly labeled.
 
 > **Note on cosine.** rvf-node does not persist the cosine metric across a file reopen, and its native COW dual-graph query is accurate for **L2**, not for the cosine metric directly. agenticow therefore drives the underlying engine with **L2 over L2-normalized vectors** when you ask for cosine (the default) — L2 order equals cosine order on unit vectors. This makes **both** the exact read-through **and** the native ANN path correct for cosine, and is why results survive `save()`/`load()`. (Reopening a cosine store via plain `open()` reports the engine metric `l2`; pass `{ metric: 'cosine' }` or use `save()`/`load()` to preserve the user-facing metric.)
