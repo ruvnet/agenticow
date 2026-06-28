@@ -1,0 +1,62 @@
+{
+  "machine": "AMD Ryzen 9 9950X 16-Core Processor",
+  "threads": 32,
+  "node": "v22.22.2",
+  "dim": 128,
+  "metric": "cosine",
+  "repeat": 11,
+  "date": "2026-06-28T17:47:17.793Z",
+  "rows": [
+    {
+      "n": 10000,
+      "baseSize": 5200604,
+      "branchCreateMs": 0.5190390000000065,
+      "emptyBranchBytes": 162,
+      "edit100Bytes": 52602,
+      "fullCopyMs": 0.37310899999999947,
+      "fullCopyBytes": 5200604,
+      "speedup": 0.7188457900080626,
+      "shrink": 32102.493827160495,
+      "sizesByEdits": {
+        "0": 162,
+        "10": 5801,
+        "100": 52602,
+        "1000": 520603
+      }
+    },
+    {
+      "n": 100000,
+      "baseSize": 52007958,
+      "branchCreateMs": 0.4632890000000316,
+      "emptyBranchBytes": 162,
+      "edit100Bytes": 52602,
+      "fullCopyMs": 5.826998000000003,
+      "fullCopyBytes": 52007958,
+      "speedup": 12.577458130885054,
+      "shrink": 321036.77777777775,
+      "sizesByEdits": {
+        "0": 162,
+        "10": 5801,
+        "100": 52602,
+        "1000": 520603
+      }
+    },
+    {
+      "n": 1000000,
+      "baseSize": 520415704,
+      "branchCreateMs": 0.4722990000000209,
+      "emptyBranchBytes": 162,
+      "edit100Bytes": 52602,
+      "fullCopyMs": 67.1435279999996,
+      "fullCopyBytes": 520415704,
+      "speedup": 142.1631805275824,
+      "shrink": 3212442.6172839506,
+      "sizesByEdits": {
+        "0": 162,
+        "10": 5801,
+        "100": 52602,
+        "1000": 520603
+      }
+    }
+  ]
+}

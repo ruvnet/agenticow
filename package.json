@@ -1,0 +1,65 @@
+{
+  "name": "agenticow",
+  "version": "0.1.0",
+  "description": "Git for Agent Memory: Copy-On-Write vector branching for embedded multi-agent memory. Branch a base memory in ~0.5ms / 162 bytes regardless of base size — 83x faster, 3000x smaller than full-copy snapshots. Exact read-through queries (parent ∪ edits, child wins).",
+  "type": "module",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    }
+  },
+  "bin": {
+    "agenticow": "bin/agenticow.js"
+  },
+  "files": [
+    "src",
+    "bin",
+    "bench/bench.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "bench": "node bench/bench.js",
+    "demo": "node bin/agenticow.js demo",
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": [
+    "agent-memory",
+    "vector-database",
+    "vector-database-branching",
+    "copy-on-write",
+    "cow",
+    "cow-vector-store",
+    "multi-agent-memory",
+    "embedded-vector-db",
+    "memory-checkpointing",
+    "vector-branching",
+    "git-for-vectors",
+    "rvf",
+    "ruvector",
+    "ai-agents",
+    "llm-memory",
+    "vector-snapshot",
+    "rollback",
+    "checkpoint"
+  ],
+  "author": "ruvnet",
+  "license": "MIT",
+  "homepage": "https://ruvnet.github.io/agenticow/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ruvnet/agenticow.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ruvnet/agenticow/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@ruvector/rvf-node": "0.1.8"
+  }
+}
