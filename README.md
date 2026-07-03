@@ -277,6 +277,40 @@ recall@10 ≈ 1.0 on linux-x64; exact read-through fallback elsewhere). The brid
 adapter can swap from the exact-read-through port to the native ANN port with no
 interface change.
 
+### Evolutionary candidate lineage (metaharness GEPA, ADR-230)
+
+First production deployment of the flagship **Branch → external-Verify → Promote**
+pattern: the metaharness **GEPA** loop (an evolutionary optimizer of an LLM
+executor's operating policy, evaluated on SWE-bench) wired agenticow in as its
+memory-transaction layer —
+[`branch-memory.mjs`](https://github.com/ruvnet/metaharness/blob/main/packages/darwin-mode/bench/swebench/gepa/branch-memory.mjs)
+in [ruvnet/metaharness](https://github.com/ruvnet/metaharness), publishing as the
+`gepa` subpath of [`@metaharness/darwin`](https://www.npmjs.com/package/@metaharness/darwin).
+The design rules that made it work:
+
+- **Memory-transaction layer, not the intelligence** — every candidate genome is
+  a 162 B COW `branch()` off its frontier parent, `checkpoint()` taken
+  pre-mutation, `diff()` vs parent recorded per candidate. Accept/reject is
+  decided by the EXTERNAL metric (train/holdout evals); agenticow records,
+  never decides.
+- **Frozen seed** — ONLY a holdout-confirmed winner `promote()`s into the seed
+  base.
+- **Retain rejected** — rejected candidates are never promoted AND never
+  deleted; they stay queryable as "what-not-to-do" memory.
+- **Portable lessons, not raw branches** — what leaves the process is the
+  lesson JSON (genome id, mutation diff, decision, lesson), not the `.rvf`
+  branch mechanics. Rich structured payloads live in a consumer-owned sidecar
+  map (`text` payloads are in-memory only — they don't survive
+  `save()`/`load()`).
+- **Degrade gracefully** — agenticow is an optional dep; when absent the branch
+  mechanics become logged no-ops and the loop runs unchanged (the ADR-150
+  removable-augmentation principle).
+
+**Measured result** (production GEPA run): promoted candidate **cand-6
+"edit-by-midpoint"** — holdout gold **2/12 → 3/12**, empty-patch rate
+**0.583 → 0.333**, **zero regressions**. Runnable miniature of the whole
+lifecycle: [`examples/gepa-lineage.mjs`](./examples/gepa-lineage.mjs).
+
 ---
 
 ## Deployment patterns (what the data says)
@@ -470,7 +504,10 @@ import { open, AgenticMemory } from 'agenticow';
 
 const mem = open(path, { dimension, metric?, track? });  // metric default "cosine"
 
-mem.ingest([{ id, vector }])           // or ingest(Float32Array, ids) for speed
+mem.ingest([{ id, vector, text? }])    // or ingest(Float32Array, ids) for speed,
+                                       // or single-vector ingest(vec, { text?, id? }).
+                                       // `text` payloads surface on query hits; in-memory
+                                       // only (carried by promote(), NOT by save()/load())
 mem.query(vector, k?, { efSearch?, overscan? })  // exact read-through, child wins
 mem.delete(ids)                        // COW tombstone (hides ancestor ids)
 
@@ -480,7 +517,9 @@ mem.checkpoint(label?)                 // freeze a restore point, keep working
 mem.rollback(checkpointId?)            // discard edits since a checkpoint
 
 mem.diff()                             // { added, overridden, deleted }
-mem.promote(target)                    // replay this branch's edits into target
+mem.promote(target?)                   // replay this branch's edits into target; defaults to
+                                       // the fork()/branch() parent — throws without one
+                                       // (standalone / load()ed: pass the target explicitly)
 
 mem.lineage(); mem.status();           // introspection
 mem.save(manifestPath); AgenticMemory.load(manifestPath)  // persist / reopen the chain
@@ -498,7 +537,7 @@ mem.close();
 npm install agenticow
 ```
 
-- Node ≥ 18, ESM. Current: **agenticow@0.2.1** on **@ruvector/rvf-node@0.2.0**.
+- Node ≥ 18, ESM. Current: **agenticow@0.2.3** on **@ruvector/rvf-node@0.2.0**.
 - Depends on [`@ruvector/rvf-node`](https://www.npmjs.com/package/@ruvector/rvf-node) (prebuilt native binding for linux-x64/arm64, darwin-x64/arm64, win32-x64).
 - **Native ANN across the branch** (`fork({ nativeAnn: true })`) requires the native COW binary, which ships for **linux-x64-gnu** today. On other platforms it degrades gracefully to the exact read-through path — same correctness, `mem.nativeAnn === false`. The exact path (the default) works on every platform.
 

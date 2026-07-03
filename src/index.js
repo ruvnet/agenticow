@@ -82,6 +82,7 @@ class Node {
     this.editVecs = new Map();
     // Optional per-id text/payload metadata (set via ingest(vec,{text}) or
     // ingest([{id,vector,text}])). Surfaced on query hits as `hit.text`.
+    // In-memory only: carried across promote(), NOT persisted by save()/load().
     this.texts = new Map();
   }
 }
@@ -470,7 +471,9 @@ export class AgenticMemory {
    * Promote (merge) this branch's recorded edits onto a target memory — the
    * Git-style "branch -> reviewed -> production" workflow. Replays the working
    * node's ingested vectors and tombstones into `target`. Requires edit tracking.
-   * @param {AgenticMemory} target
+   * Throws when there is neither a target nor a fork()/branch() parent (e.g. a
+   * standalone open()ed base or a manifest-load()ed memory).
+   * @param {AgenticMemory} [target] defaults to the fork()/branch() parent
    * @returns {{ingested:number, deleted:number}}
    */
   promote(target) {
@@ -596,7 +599,8 @@ export class AgenticMemory {
    * Persist the lineage to a small JSON manifest so the CLI (or another process)
    * can reopen the exact chain. Vector data stays in the .rvf files; the manifest
    * holds the chain order, labels, tombstones and (for diff/promote) the working
-   * node's recorded edits.
+   * node's recorded edits. Note: `text` payloads are NOT included — they are
+   * in-memory metadata and do not survive save()/load().
    * @param {string} manifestPath
    */
   save(manifestPath) {
