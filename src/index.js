@@ -608,8 +608,14 @@ export class AgenticMemory {
       // only the working node (i===0) needs its edit vectors for promote()
       editIds: i === 0 ? [...n.editIds] : [],
       editVecs: i === 0 ? Object.fromEntries([...n.editVecs].map(([id, v]) => [id, Array.from(v)])) : {},
+      // Per-id text payloads (surfaced on query hits via _textFor's chain
+      // walk). Persisted for EVERY node — a payload ingested on an ancestor
+      // must survive save/load or query hits from that node lose their text.
+      texts: Object.fromEntries([...n.texts]),
     }));
-    fs.writeFileSync(manifestPath, JSON.stringify({ v: 1, dim: this._dim, metric: this._metric, track: this._track, nodes }, null, 2));
+    // v2 adds per-node `texts`. load() reads `nm.texts || {}`, so v1 manifests
+    // (no texts) still load — forward-compatible, no migration needed.
+    fs.writeFileSync(manifestPath, JSON.stringify({ v: 2, dim: this._dim, metric: this._metric, track: this._track, nodes }, null, 2));
     return manifestPath;
   }
 
@@ -626,6 +632,9 @@ export class AgenticMemory {
       node.tombstones = new Set(nm.tombstones || []);
       node.editIds = new Set(nm.editIds || []);
       node.editVecs = new Map(Object.entries(nm.editVecs || {}).map(([id, v]) => [Number(id), Float32Array.from(v)]));
+      // Restore text payloads (v2 manifest). v1 manifests have no `texts`
+      // key → empty Map, matching pre-fix behavior for old files.
+      node.texts = new Map(Object.entries(nm.texts || {}).map(([id, t]) => [Number(id), t]));
       return node;
     });
     // A loaded instance opened every handle itself, so it owns the whole chain.
