@@ -304,3 +304,35 @@ Finance↔Sales agree on revenue-recognition (not flagged) = true
 → gate the rollout: 23 contradictions must be resolved before promote-all.
 NOTE: mechanics only — facts are vectors; the rule is a distance threshold, not reasoning.
 ```
+
+---
+
+## Production case study — `gepa-lineage.mjs` (metaharness GEPA, ADR-230)
+
+Miniature of the FIRST production deployment of Branch → external-Verify →
+Promote: the metaharness GEPA loop uses agenticow as its memory-transaction
+layer for evolutionary candidate lineage
+([`branch-memory.mjs`](https://github.com/ruvnet/metaharness/blob/main/packages/darwin-mode/bench/swebench/gepa/branch-memory.mjs),
+publishing as [`@metaharness/darwin`](https://www.npmjs.com/package/@metaharness/darwin) `gepa` subpath;
+details in the main README's [MetaHarness usage](../README.md#metaharness-usage) section).
+Every candidate genome = a 162 B COW branch off its frontier parent; the
+EXTERNAL metric decides; only a holdout winner promotes into the frozen seed;
+rejected candidates are retained as queryable what-not-to-do memory; portable
+lessons export separately from the raw branch mechanics.
+
+```
+seed base: 2 vectors (frozen — only a holdout winner may promote)
+checkpoint "pre-mutation" (872 B) — pre-mutation restore point
+  cand-1: branch 162 B → diff +1/~0/-0 → external metric says REJECT (train 0.31)
+  cand-2: branch 162 B → diff +1/~0/-0 → external metric says REJECT (train 0.28)
+  cand-6: branch 162 B → diff +1/~0/-0 → external metric says HOLDOUT_WIN (train 0.52)
+promoted cand-6 "edit_strategy: edit-by-midpoint" → 1 vector into the seed base
+  measured (production run): holdout gold 2/12 → 3/12, empty-patch 0.583 → 0.333, regressions 0
+  what-not-to-do (cand-1, dist 1.745): cand-1 :: edit_strategy: insert-at-top :: inserting at top of file breaks imports ordering
+  what-not-to-do (cand-2, dist 2.013): cand-2 :: localization: read-whole-repo :: whole-repo reads blow the context budget
+portable lessons exported: 3 (all decided candidates, win AND lose)
+```
+
+> The holdout numbers are the real measured production result (metaharness GEPA
+> run); the candidate scores in the script are a fixed table standing in for the
+> external evaluator — agenticow records lineage, it never decides.

@@ -29,11 +29,12 @@
     "bench:ladder": "node bench/claim-ladder.js",
     "acceptance": "node bench/acceptance.js",
     "demo": "node bin/agenticow.js demo",
-    "examples": "for f in red-team-sandbox multi-persona-consensus time-travel-debug multi-tenant-saas personalization rollback-quarantine checkpointing git-workflow ab-branches parallel-agents promotion-pipeline compliance-lineage ab-at-scale parallel-selves memory-evolution simulated-org; do echo \"\\n══ $f ══\"; node examples/$f.mjs; done",
+    "examples": "for f in red-team-sandbox multi-persona-consensus time-travel-debug multi-tenant-saas personalization rollback-quarantine checkpointing git-workflow ab-branches parallel-agents promotion-pipeline compliance-lineage ab-at-scale parallel-selves memory-evolution simulated-org gepa-lineage; do echo \"\\n══ $f ══\"; node examples/$f.mjs; done",
     "examples:production": "for f in red-team-sandbox multi-persona-consensus time-travel-debug multi-tenant-saas; do echo \"\\n══ $f ══\"; node examples/$f.mjs; done",
     "examples:platform": "for f in promotion-pipeline compliance-lineage ab-at-scale; do echo \"\\n══ $f ══\"; node examples/$f.mjs; done",
     "examples:exotic": "for f in parallel-selves memory-evolution simulated-org; do echo \"\\n══ $f ══\"; node examples/$f.mjs; done",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "check:types": "tsc --noEmit --strict --target es2022 --module nodenext --moduleResolution nodenext test/types-consumer.ts"
   },
   "keywords": [
     "agent-memory",
@@ -70,5 +71,8 @@
   },
   "dependencies": {
     "@ruvector/rvf-node": "^0.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
   }
 }

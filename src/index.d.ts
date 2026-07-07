@@ -53,7 +53,11 @@ export interface QueryHit {
   distance: number;
   /** label/id of the lineage node the hit came from (which "wins"). */
   branch: string;
-  /** optional text/payload set via ingest(vec,{text}) / ingest([{id,vector,text}]). */
+  /**
+   * optional text/payload set via ingest(vec,{text}) / ingest([{id,vector,text}]).
+   * In-memory only: carried across promote(), but NOT persisted by save()/load()
+   * — keep a sidecar map if payloads must survive a process restart.
+   */
   text?: string;
 }
 
@@ -126,12 +130,22 @@ export class AgenticMemory {
   branch(label?: string, filePath?: string): AgenticMemory;
   fork(label?: string, filePath?: string, opts?: ForkOptions): AgenticMemory;
   diff(): MemoryDiff;
-  /** Promote this branch's edits into `target`; defaults to the fork/branch parent when omitted. */
+  /**
+   * Promote this branch's edits into `target`; defaults to the fork()/branch()
+   * parent when omitted. Throws when there is neither a target nor a parent —
+   * a standalone open()ed base or a manifest-load()ed memory has no parent, so
+   * pass the target explicitly there.
+   */
   promote(target?: AgenticMemory): { ingested: number; deleted: number };
   checkpoint(label?: string): CheckpointDescriptor;
   rollback(checkpointId?: string): { restoredTo: string; depth: number };
   lineage(): LineageNode[];
   status(): MemoryStatus;
+  /**
+   * Persist the lineage chain (order, labels, tombstones, working-node edits)
+   * to a JSON manifest. Note: `text` payloads are NOT included — they are
+   * in-memory metadata and do not survive save()/load().
+   */
   save(manifestPath: string): string;
   static load(manifestPath: string): AgenticMemory;
   close(): void;
