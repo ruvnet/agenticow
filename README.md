@@ -498,7 +498,7 @@ mem.close();
 npm install agenticow
 ```
 
-- Node ≥ 18, ESM. Current: **agenticow@0.2.1** on **@ruvector/rvf-node@0.2.0**.
+- Node ≥ 18, ESM. Current: **agenticow@0.2.5** on **@ruvector/rvf-node@0.4.x**.
 - Depends on [`@ruvector/rvf-node`](https://www.npmjs.com/package/@ruvector/rvf-node) (prebuilt native binding for linux-x64/arm64, darwin-x64/arm64, win32-x64).
 - **Native ANN across the branch** (`fork({ nativeAnn: true })`) requires the native COW binary, which ships for **linux-x64-gnu** today. On other platforms it degrades gracefully to the exact read-through path — same correctness, `mem.nativeAnn === false`. The exact path (the default) works on every platform.
 
