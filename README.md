@@ -437,7 +437,7 @@ The [live site](https://ruvnet.github.io/agenticow/#bench) is mobile-friendly (r
 agenticow ships, and proves, exactly this:
 
 - ✅ **COW branch creation** — base-size-independent, 162 B / ~0.5 ms (the 83× / 3000× headline). Proven by `npm run bench`.
-- ✅ **Exact read-through queries** — point lookup / flat-scan merge returning `parent ∪ edits`, child wins on collisions, deletes honored. Proven by `npm run acceptance` (recall@10 = 100%, masking PASS).
+- ✅ **Exact read-through queries** — point lookup / flat-scan merge returning `parent ∪ edits`, child wins on collisions, deletes honored. Proven by `npm run acceptance` (recall@10 = 100%, masking PASS). Each store answers with its own HNSW, so on large high-dimensional stores pass `forceExact: true` for an exact top-k (20k × 384-d: 0.882 default, 1.000 exact).
 - ✅ **Native ANN search ACROSS the COW boundary** — *now shipped* (was roadmap). `fork(label, file, { nativeAnn: true })` creates a real `RvfDatabase.branch()` whose `query()` runs a single Rust dual-graph HNSW merge over parent ∪ child ([RuVector PR #617/#618](https://github.com/ruvnet/RuVector/pull/617)). **Verified recall@10 ≈ 1.0 (0.999)** here — 5,000-vector base ∪ 200 edits, dim 128, default cosine — vs a brute-force ground truth. **Platform caveat:** the native binary ships for **linux-x64-gnu** today; darwin / win / linux-arm64 are pending a CI cross-compile and **degrade gracefully to the exact read-through path** (identical correctness, JS merge — `mem.nativeAnn` reads `false`).
 
 Still honest about the rest:
@@ -445,7 +445,7 @@ Still honest about the rest:
 - We still **concede raw single-index ANN throughput** to dedicated vector DBs — ~6.3× behind a dedicated flat-index engine like hnswlib at 1M-vector scale (matched recall@10 ≈ 0.97; ~2.7× on small in-cache sets). It's a **deliberate trade** — agenticow competes on memory versioning/isolation/rollback, not raw search speed (see [comparison](#how-it-compares)).
 - The **exotic** applications (agent marketplaces, etc.) remain **vision/roadmap**, clearly labeled.
 
-> **Note on cosine.** rvf-node does not persist the cosine metric across a file reopen, and its native COW dual-graph query is accurate for **L2**, not for the cosine metric directly. agenticow therefore drives the underlying engine with **L2 over L2-normalized vectors** when you ask for cosine (the default) — L2 order equals cosine order on unit vectors. This makes **both** the exact read-through **and** the native ANN path correct for cosine, and is why results survive `save()`/`load()`. (Reopening a cosine store via plain `open()` reports the engine metric `l2`; pass `{ metric: 'cosine' }` or use `save()`/`load()` to preserve the user-facing metric.)
+> **Note on cosine.** rvf-node does not persist the cosine metric across a file reopen, and its native COW dual-graph query is accurate for **L2**, not for the cosine metric directly. agenticow therefore drives the underlying engine with **L2 over L2-normalized vectors** when you ask for cosine (the default) — L2 order equals cosine order on unit vectors. This makes **both** the exact read-through **and** the native ANN path correct for cosine, and is why results survive `save()`/`load()`. Since agenticow 0.3.0 on rvf-node ≥ 0.4.2 the user-facing metric is stored in the file (file metadata `agenticow.metric`), so a plain `open()` of a store created by 0.3.0 reports `cosine` and keeps normalizing new vectors. Stores created by older versions carry no such key: pass `{ metric: 'cosine' }` or use `save()`/`load()` for them.
 
 ---
 
@@ -471,7 +471,7 @@ import { open, AgenticMemory } from 'agenticow';
 const mem = open(path, { dimension, metric?, track? });  // metric default "cosine"
 
 mem.ingest([{ id, vector }])           // or ingest(Float32Array, ids) for speed
-mem.query(vector, k?, { efSearch?, overscan? })  // exact read-through, child wins
+mem.query(vector, k?, { efSearch?, overscan?, forceExact? })  // read-through, child wins
 mem.delete(ids)                        // COW tombstone (hides ancestor ids)
 
 mem.branch(label?)                     // isolated COW fork (auto-isolates the parent)
@@ -489,6 +489,8 @@ mem.close();
 
 - **`branch()`** auto-isolates: it freezes the current state and re-points the parent to a fresh child, so neither side sees the other's later writes — safe when you keep writing to both.
 - **`fork()`** is one `derive()` with no re-pointing — ideal for fanning out many branches off a base you won't mutate again (the 1,000-branch case).
+- **Text payloads are durable** (rvf-node ≥ 0.4.2). A string `text` passed to `ingest()` or carried by `promote()` is written into the `.rvf` as per-vector metadata (field `TEXT_FIELD = 0`), so a plain `open()` of the file returns it on hits; before 0.3.0 it lived only in the `save()` manifest. The manifest still records it too, so older agenticow versions can read new manifests.
+- **`forceExact: true`** skips the native COW path and (rvf-node ≥ 0.4.2) makes every store in the chain do an exact scan instead of its HNSW lookup, so the merged top-k is exact. Measured on a 20,000 × 384-d cosine base plus 500 edits: recall@10 **0.882 → 1.000**, 1.3 → 2.6 ms/query. On an older binding the option only bypasses the native path.
 
 ---
 
@@ -498,9 +500,22 @@ mem.close();
 npm install agenticow
 ```
 
-- Node ≥ 18, ESM. Current: **agenticow@0.2.5** on **@ruvector/rvf-node@0.4.x**.
+- Node ≥ 18, ESM. Current: **agenticow@0.3.0** on **@ruvector/rvf-node ≥ 0.4.3**.
 - Depends on [`@ruvector/rvf-node`](https://www.npmjs.com/package/@ruvector/rvf-node) (prebuilt native binding for linux-x64/arm64, darwin-x64/arm64, win32-x64).
 - **Native ANN across the branch** (`fork({ nativeAnn: true })`) requires the native COW binary, which ships for **linux-x64-gnu** today. On other platforms it degrades gracefully to the exact read-through path — same correctness, `mem.nativeAnn === false`. The exact path (the default) works on every platform.
+
+---
+
+## Works with @ruvector/rvf
+
+agenticow stores are ordinary RVF files written through [`@ruvector/rvf-node`](https://www.npmjs.com/package/@ruvector/rvf-node), so the rest of the RVF stack can read them:
+
+- [`@ruvector/rvf`](https://www.npmjs.com/package/@ruvector/rvf) — the TypeScript SDK over the same format (string ids, typed filters); open an agenticow `.rvf` with it to inspect or query a branch.
+- [`@ruvector/rvf-node`](https://www.npmjs.com/package/@ruvector/rvf-node) — the native binding agenticow uses directly.
+- [`@ruvector/rvf-mcp-server`](https://www.npmjs.com/package/@ruvector/rvf-mcp-server) — exposes RVF stores to AI agents over MCP.
+- [`ruvector`](https://www.npmjs.com/package/ruvector) — umbrella package and CLI (`npx ruvector rvf ...`).
+
+Text payloads appear to those tools as metadata field `0` (string); the SDK returns them as `metadata["field.0"]`.
 
 ---
 
