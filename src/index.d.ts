@@ -31,8 +31,9 @@ export interface QueryOptions {
   /** Candidates to over-fetch per store before exact merge. Default: k*4. */
   overscan?: number;
   /**
-   * Force the exact JS chain-walk even on a native-COW fork.
-   * Default false (native path used when available).
+   * Force the exact JS chain-walk even on a native-COW fork, and (rvf-node
+   * >= 0.4.2) an exact brute-force scan inside each store instead of its HNSW
+   * lookup — so the merged result is the exact top-k. Default false.
    */
   forceExact?: boolean;
 }
@@ -53,7 +54,11 @@ export interface QueryHit {
   distance: number;
   /** label/id of the lineage node the hit came from (which "wins"). */
   branch: string;
-  /** optional text/payload set via ingest(vec,{text}) / ingest([{id,vector,text}]). */
+  /**
+   * optional text/payload set via ingest(vec,{text}) / ingest([{id,vector,text}]).
+   * With rvf-node >= 0.4.2 a string text is also stored in the .rvf as
+   * per-vector metadata (field {@link TEXT_FIELD}), so it survives a plain open().
+   */
   text?: string;
 }
 
@@ -137,6 +142,8 @@ export class AgenticMemory {
   close(): void;
 }
 
+/** rvf-node metadata fieldId that holds a vector's string text payload. */
+export const TEXT_FIELD: 0;
 export function open(filePath: string, opts?: OpenOptions): AgenticMemory;
 /** Alias of {@link open}; lets `import { openBase }` snippets run verbatim. */
 export function openBase(filePath: string, opts?: OpenOptions): AgenticMemory;

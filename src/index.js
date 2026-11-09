@@ -27,6 +27,23 @@ const { RvfDatabase } = pkg;
 
 const DEFAULT_METRIC = 'cosine';
 
+// Durable per-vector metadata (rvf-node >= 0.4.2). A string text payload is
+// written into the .rvf itself as metadata field TEXT_FIELD, so a plain
+// open() of the file recovers it (no manifest needed) and query hits carry it.
+// The user-facing metric is stored as file-level metadata under METRIC_KEY.
+// Every use is feature-checked: on an older rvf-node these calls are skipped
+// and agenticow behaves exactly as before (texts in the save() manifest only).
+export const TEXT_FIELD = 0;
+const METRIC_KEY = 'agenticow.metric';
+const hasFn = (db, name) => typeof db?.[name] === 'function';
+
+/** Text payload carried on a native hit's metadata record, if any. */
+function metaText(fields) {
+  if (!Array.isArray(fields)) return undefined;
+  const e = fields.find((x) => x.fieldId === TEXT_FIELD && x.valueType === 'string');
+  return e ? e.value : undefined;
+}
+
 // Process-wide monotonic counter for auto-assigned ids (the convenience
 // `ingest(vec, {text})` form with no explicit id). Shared across ALL instances
 // so a base and the branches forked from it never collide on an auto-id — a
@@ -52,6 +69,12 @@ function l2normalize(src) {
   n = Math.sqrt(n);
   if (n > 0) for (let i = 0; i < v.length; i++) v[i] /= n;
   return v;
+}
+
+/** True when a node nearer than chain[ni] rewrote `id` (child-wins shadowing). */
+function rewrittenNearer(chain, ni, id) {
+  for (let j = 0; j < ni; j++) if (chain[j].editIds.has(id)) return true;
+  return false;
 }
 
 function tmpChildPath(base, label) {
@@ -144,7 +167,12 @@ export class AgenticMemory {
       // A reopened store reports its ENGINE metric (l2 for cosine stores). Let
       // the caller restore the user-facing metric with opts.metric — or use
       // save()/load(), which persists it. See README "Note on cosine".
-      metric = opts.metric || (db.metric ? db.metric() : DEFAULT_METRIC);
+      // rvf-node >= 0.4.2: the user-facing metric is persisted in the file.
+      let stored = null;
+      if (hasFn(db, 'getFileMetadata')) {
+        try { stored = db.getFileMetadata(METRIC_KEY); } catch { stored = null; }
+      }
+      metric = opts.metric || stored || (db.metric ? db.metric() : DEFAULT_METRIC);
     } else {
       if (!opts.dimension) {
         throw new Error('agenticow: dimension is required when creating a new memory file');
@@ -159,6 +187,9 @@ export class AgenticMemory {
         ...(opts.m ? { m: opts.m } : {}),
         ...(opts.efConstruction ? { efConstruction: opts.efConstruction } : {}),
       });
+      if (hasFn(db, 'setFileMetadata')) {
+        try { db.setFileMetadata(METRIC_KEY, String(metric)); } catch { /* best effort */ }
+      }
     }
     return new AgenticMemory(new Node(db, filePath, 'base'), [], dim, metric, opts.track !== false);
   }
@@ -199,11 +230,12 @@ export class AgenticMemory {
     if (looksLikeVector && secondIsOpts) {
       const opts = ids || {};
       const id = opts.id !== undefined ? opts.id : GLOBAL_AUTO_ID++;
-      if (opts.text !== undefined) this._working.texts.set(id, opts.text);
-      return this.ingest([{ id, vector: records }]);
+      return this.ingest([{ id, vector: records, text: opts.text }]);
     }
 
     let flat, idArr;
+    /** @type {Map<number, any>|null} text payloads carried by this batch */
+    let texts = null;
     if (records instanceof Float32Array) {
       flat = this._normalize ? Float32Array.from(records) : records;
       idArr = ids;
@@ -211,8 +243,9 @@ export class AgenticMemory {
       idArr = records.map((r) => r.id);
       flat = new Float32Array(records.length * this._dim);
       for (let i = 0; i < records.length; i++) flat.set(toF32(records[i].vector), i * this._dim);
-      // record optional text payloads carried on the records
-      for (const r of records) if (r.text !== undefined) this._working.texts.set(r.id, r.text);
+      for (const r of records) {
+        if (r.text !== undefined) (texts ||= new Map()).set(r.id, r.text);
+      }
     } else {
       throw new Error('agenticow: ingest expects an array of {id,vector} or (Float32Array, ids)');
     }
@@ -226,9 +259,33 @@ export class AgenticMemory {
         if (n > 0) for (let j = 0; j < this._dim; j++) flat[o + j] /= n;
       }
     }
+    return this._ingestFlat(flat, idArr, texts);
+  }
+
+  /**
+   * Write an already-normalized flat batch into the working node. When the
+   * batch carries text payloads and the binding supports durable per-vector
+   * metadata, string texts go into the .rvf as well as the in-memory map.
+   * @private
+   */
+  _ingestFlat(flat, idArr, texts) {
+    const db = this._working.db;
     // A re-ingested id is no longer a delete in this node.
     for (const id of idArr) this._working.tombstones.delete(id);
-    const res = this._working.db.ingestBatch(flat, idArr);
+    let res;
+    if (texts && texts.size && hasFn(db, 'ingestBatchWithMetadata')) {
+      const recs = idArr.map((id) => {
+        const t = texts.get(id);
+        return {
+          id,
+          fields: typeof t === 'string' ? [{ fieldId: TEXT_FIELD, valueType: 'string', value: t }] : [],
+        };
+      });
+      res = db.ingestBatchWithMetadata(flat, idArr, recs);
+    } else {
+      res = db.ingestBatch(flat, idArr);
+    }
+    if (texts) for (const [id, t] of texts) this._working.texts.set(id, t);
     if (this._track) {
       for (let i = 0; i < idArr.length; i++) {
         const id = idArr[i];
@@ -279,7 +336,12 @@ export class AgenticMemory {
       k = opts.topK ?? opts.k ?? 10;
     }
     const qv = this._normalize ? l2normalize(vector) : toF32(vector);
-    const qopts = opts.efSearch ? { efSearch: opts.efSearch } : undefined;
+    // forceExact also reaches rvf-node (>= 0.4.2), turning each store's
+    // per-node HNSW lookup into an exact scan so the chain-walk is exact end
+    // to end. Older bindings ignore the unknown option.
+    const qopts = opts.efSearch || opts.forceExact
+      ? { ...(opts.efSearch ? { efSearch: opts.efSearch } : {}), ...(opts.forceExact ? { forceExact: true } : {}) }
+      : undefined;
 
     // ── Native COW dual-graph ANN path ────────────────────────────────
     // When this instance was created via fork({nativeAnn:true}) or
@@ -295,7 +357,7 @@ export class AgenticMemory {
         id: h.id,
         distance: h.distance,
         branch: this._working.label || this._working.id,
-      }));
+      }, h.metadata));
     }
 
     // ── Exact JS chain-walk (default / fallback) ──────────────────────
@@ -304,7 +366,9 @@ export class AgenticMemory {
     const fetch = Math.max(k, opts.overscan || k * 4);
     const resolved = new Map(); // id -> {id, distance, branch}
     const hidden = new Set(); // ids tombstoned by a nearer descendant
-    for (const node of this._chain()) {
+    const chain = this._chain();
+    for (let ni = 0; ni < chain.length; ni++) {
+      const node = chain[ni];
       for (const t of node.tombstones) hidden.add(t);
       let hits = [];
       try {
@@ -314,13 +378,18 @@ export class AgenticMemory {
       }
       for (const h of hits) {
         if (resolved.has(h.id) || hidden.has(h.id)) continue; // nearer node wins
-        resolved.set(h.id, { id: h.id, distance: h.distance, branch: node.label || node.id });
+        // An id rewritten in a nearer node shadows every older copy, even
+        // when the nearer copy fell outside that node's top-`fetch` —
+        // otherwise the stale ancestor vector could surface. Uses the edit
+        // log (track:true); cost is O(hits x depth), not O(edits).
+        if (ni > 0 && rewrittenNearer(chain, ni, h.id)) continue;
+        resolved.set(h.id, { id: h.id, distance: h.distance, branch: node.label || node.id, _meta: h.metadata });
       }
     }
     return [...resolved.values()]
       .sort((a, b) => a.distance - b.distance)
       .slice(0, k)
-      .map((h) => this._withText(h));
+      .map(({ _meta, ...h }) => this._withText(h, _meta));
   }
 
   /** Walk the lineage chain (child→base) for the text payload of an id. */
@@ -331,9 +400,15 @@ export class AgenticMemory {
     return undefined;
   }
 
-  /** Attach a `text` field to a hit when a payload exists for its id. */
-  _withText(hit) {
-    const t = this._textFor(hit.id);
+  /**
+   * Attach a `text` field to a hit when a payload exists for its id. The
+   * in-memory/manifest map wins (unchanged semantics); otherwise the durable
+   * metadata record returned on the native hit (rvf-node >= 0.4.2) fills in —
+   * which is what recovers texts after a plain open() of an existing file.
+   */
+  _withText(hit, meta) {
+    let t = this._textFor(hit.id);
+    if (t === undefined) t = metaText(meta);
     return t === undefined ? hit : { ...hit, text: t };
   }
 
@@ -489,11 +564,14 @@ export class AgenticMemory {
     if (ids.length) {
       const flat = new Float32Array(ids.length * this._dim);
       for (let i = 0; i < ids.length; i++) flat.set(this._working.editVecs.get(ids[i]), i * this._dim);
-      target.ingest(flat, ids);
-      // carry text payloads across the promotion
+      // carry text payloads across the promotion (durably, when supported)
+      let texts = null;
       for (const id of ids) {
-        if (this._working.texts.has(id)) target._working.texts.set(id, this._working.texts.get(id));
+        if (this._working.texts.has(id)) (texts ||= new Map()).set(id, this._working.texts.get(id));
       }
+      target._assertOpen();
+      // edit vectors are already normalized for cosine, so skip re-normalizing
+      target._ingestFlat(flat, ids, texts);
     }
     const tomb = [...this._working.tombstones];
     if (tomb.length) target.delete(tomb);
