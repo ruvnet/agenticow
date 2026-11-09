@@ -437,7 +437,7 @@ The [live site](https://ruvnet.github.io/agenticow/#bench) is mobile-friendly (r
 agenticow ships, and proves, exactly this:
 
 - ✅ **COW branch creation** — base-size-independent, 162 B / ~0.5 ms (the 83× / 3000× headline). Proven by `npm run bench`.
-- ✅ **Exact read-through queries** — point lookup / flat-scan merge returning `parent ∪ edits`, child wins on collisions, deletes honored. Proven by `npm run acceptance` (recall@10 = 100%, masking PASS).
+- ✅ **Exact read-through queries** — point lookup / flat-scan merge returning `parent ∪ edits`, child wins on collisions, deletes honored. Proven by `npm run acceptance` (recall@10 = 100%, masking PASS). Each store answers with its own HNSW, so on large high-dimensional stores pass `forceExact: true` for an exact top-k (20k × 384-d: 0.882 default, 1.000 exact).
 - ✅ **Native ANN search ACROSS the COW boundary** — *now shipped* (was roadmap). `fork(label, file, { nativeAnn: true })` creates a real `RvfDatabase.branch()` whose `query()` runs a single Rust dual-graph HNSW merge over parent ∪ child ([RuVector PR #617/#618](https://github.com/ruvnet/RuVector/pull/617)). **Verified recall@10 ≈ 1.0 (0.999)** here — 5,000-vector base ∪ 200 edits, dim 128, default cosine — vs a brute-force ground truth. **Platform caveat:** the native binary ships for **linux-x64-gnu** today; darwin / win / linux-arm64 are pending a CI cross-compile and **degrade gracefully to the exact read-through path** (identical correctness, JS merge — `mem.nativeAnn` reads `false`).
 
 Still honest about the rest:

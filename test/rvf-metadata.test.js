@@ -68,7 +68,10 @@ test('native COW fork returns parent texts from metadata', () => {
     base.ingest([{ id: 1, vector: v(1), text: 'parent' }]);
     const nat = base.fork('n', undefined, { nativeAnn: true });
     nat._working.texts.clear(); base._working.texts.clear(); // only disk metadata left
+    nat.ingest([{ id: 2, vector: v(2) }]);
     if (nat.nativeAnn) assert.equal(nat.query(v(1), 1)[0].text, 'parent');
+    // forceExact on a native fork still spans parent and child
+    assert.deepEqual(nat.query(v(1), 2, { forceExact: true }).map((h) => h.id).sort(), [1, 2]);
     nat.close(); base.close();
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
