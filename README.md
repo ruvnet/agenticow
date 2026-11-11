@@ -528,3 +528,7 @@ agent memory · vector database branching · copy-on-write · COW vector store �
 ## License
 
 MIT © [ruvnet](https://github.com/ruvnet). Built on [ruvector](https://github.com/ruvnet/RuVector) RVF.
+
+## Discoverability topics
+
+agent-memory · vector-database · vector-database-branching · copy-on-write · cow · cow-vector-store · multi-agent-memory · embedded-vector-db · memory-checkpointing · vector-branching · git-for-vectors · rvf · ruvector · ai-agents · llm-memory · vector-snapshot · rollback · checkpoint · semantic-search · hnsw · nearest-neighbor · vector-search · memory-isolation · persistent-memory · memory-versioning · branch-and-merge · nodejs · typescript · embedded-database · agent-memory-store

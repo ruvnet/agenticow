@@ -1,0 +1,17 @@
+{
+  "schema": "npm.metadata-release/1",
+  "repository": "ruvnet/agenticow",
+  "releaseTag": "agenticow-v0.3.1",
+  "bootstrap": [],
+  "packages": [
+    {
+      "name": "agenticow",
+      "directory": ".",
+      "fromVersion": "0.3.0",
+      "toVersion": "0.3.1",
+      "overlays": [
+        "README.md"
+      ]
+    }
+  ]
+}
